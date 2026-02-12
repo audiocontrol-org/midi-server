@@ -1,18 +1,86 @@
 /**
  * JsonBuilder - Simple JSON construction utilities
  *
- * This is a placeholder file. The actual implementation will be ported
- * from ol_dsp/modules/juce/midi-server/
- *
- * See GitHub issue #4 for porting details.
+ * Lightweight JSON builder for HTTP responses.
+ * No external dependencies - uses only standard library.
  */
 
 #pragma once
 
-#include <juce_core/juce_core.h>
+#include <sstream>
+#include <string>
 
-// TODO: Port JsonBuilder implementation
-// Features:
-// - Simple JSON object/array construction
-// - String escaping
-// - MIDI data serialization
+class JsonBuilder
+{
+public:
+    JsonBuilder& startObject() {
+        if (!firstItem) ss << ",";
+        ss << "{";
+        firstItem = true;
+        return *this;
+    }
+
+    JsonBuilder& endObject() {
+        ss << "}";
+        firstItem = false;
+        return *this;
+    }
+
+    JsonBuilder& startArray() {
+        if (!firstItem) ss << ",";
+        ss << "[";
+        firstItem = true;
+        return *this;
+    }
+
+    JsonBuilder& endArray() {
+        ss << "]";
+        firstItem = false;
+        return *this;
+    }
+
+    JsonBuilder& key(const std::string& k) {
+        if (!firstItem) ss << ",";
+        ss << "\"" << k << "\":";
+        firstItem = true;
+        return *this;
+    }
+
+    JsonBuilder& value(const std::string& v) {
+        ss << "\"" << v << "\"";
+        firstItem = false;
+        return *this;
+    }
+
+    JsonBuilder& value(bool b) {
+        ss << (b ? "true" : "false");
+        firstItem = false;
+        return *this;
+    }
+
+    JsonBuilder& value(int i) {
+        ss << i;
+        firstItem = false;
+        return *this;
+    }
+
+    JsonBuilder& arrayValue(const std::string& v) {
+        if (!firstItem) ss << ",";
+        ss << "\"" << v << "\"";
+        firstItem = false;
+        return *this;
+    }
+
+    JsonBuilder& arrayValue(int i) {
+        if (!firstItem) ss << ",";
+        ss << i;
+        firstItem = false;
+        return *this;
+    }
+
+    std::string toString() { return ss.str(); }
+
+private:
+    std::stringstream ss;
+    bool firstItem = true;
+};

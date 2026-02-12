@@ -37,16 +37,16 @@ Week of Feb 10-14
 **Objective:** Port the HTTP server and supporting utilities
 
 **Tasks:**
-- [ ] Copy httplib.h to deps/
-- [ ] Port MidiHttpServer2.cpp to src/MidiHttpServer.cpp
-- [ ] Port MidiPort abstraction
-- [ ] Port JsonBuilder utilities
-- [ ] Remove ol_dsp-specific dependencies
-- [ ] Update includes for standalone build
+- [x] Copy httplib.h to deps/
+- [x] Port MidiHttpServer2.cpp to src/MidiHttpServer.cpp
+- [x] Port MidiPort abstraction
+- [x] Port JsonBuilder utilities
+- [x] Remove ol_dsp-specific dependencies
+- [x] Update includes for standalone build
 
 **Verification:**
-- Compiles on macOS
-- Server starts and responds to /health
+- [x] Compiles on macOS
+- [x] Server starts and responds to /health
 
 ### Phase 3: Cross-Platform Builds (Issue #5)
 

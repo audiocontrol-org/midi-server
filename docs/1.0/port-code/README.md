@@ -22,9 +22,11 @@ Port the JUCE-based MIDI HTTP server from `ol_dsp/modules/juce/midi-server/` to 
 - [x] Project structure initialized
 - [x] Feature documentation created
 - [ ] GitHub issues created
-- [ ] MidiHttpServer2 ported
-- [ ] MidiPort utilities ported
-- [ ] Cross-platform builds verified
+- [x] MidiHttpServer2 ported
+- [x] MidiPort utilities ported
+- [x] httplib.h copied to deps/
+- [x] macOS build verified
+- [ ] Cross-platform CI builds verified
 - [ ] Documentation complete
 
 ## Source Code Location
