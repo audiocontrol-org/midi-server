@@ -1,8 +1,9 @@
 # Feature: macOS Installer
 
 **Status:** Planning
-**Milestone:** Week of Feb 17-21
+**Milestone:** [Week of Feb 17-21](https://github.com/audiocontrol-org/midi-server/milestone/2)
 **Branch:** `feature/macos-installer`
+**Parent Issue:** [#8](https://github.com/audiocontrol-org/midi-server/issues/8)
 
 ## Overview
 
@@ -19,13 +20,24 @@ Create a signed and notarized macOS installer (.pkg) for the MIDI HTTP Server th
 ## Progress
 
 - [x] Feature documentation created
-- [ ] GitHub milestone created
-- [ ] GitHub issues created
+- [x] GitHub milestone created
+- [x] GitHub issues created
 - [ ] Packaging scripts added
 - [ ] Code signing configured
 - [ ] Notarization working
 - [ ] CI workflow complete
 - [ ] Documentation updated
+
+## GitHub Issues
+
+| # | Title | Status |
+|---|-------|--------|
+| [#8](https://github.com/audiocontrol-org/midi-server/issues/8) | [macos-installer] Create signed macOS installer | Open |
+| [#9](https://github.com/audiocontrol-org/midi-server/issues/9) | Add entitlements and packaging scripts | Open |
+| [#10](https://github.com/audiocontrol-org/midi-server/issues/10) | Set up code signing in CI | Open |
+| [#11](https://github.com/audiocontrol-org/midi-server/issues/11) | Add notarization to CI | Open |
+| [#12](https://github.com/audiocontrol-org/midi-server/issues/12) | Create GitHub Release workflow | Open |
+| [#13](https://github.com/audiocontrol-org/midi-server/issues/13) | Add installation documentation | Open |
 
 ## Prerequisites
 

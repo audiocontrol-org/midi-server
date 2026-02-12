@@ -2,22 +2,22 @@
 
 ## Milestone
 
-Week of Feb 17-21
+[Week of Feb 17-21](https://github.com/audiocontrol-org/midi-server/milestone/2)
 
 ## Issues
 
 | # | Title | Status |
 |---|-------|--------|
-| TBD | [macos-installer] Create signed macOS installer | Pending |
-| TBD | Add entitlements and packaging scripts | Pending |
-| TBD | Set up code signing in CI | Pending |
-| TBD | Add notarization to CI | Pending |
-| TBD | Create GitHub Release workflow | Pending |
-| TBD | Add installation documentation | Pending |
+| [#8](https://github.com/audiocontrol-org/midi-server/issues/8) | [macos-installer] Create signed macOS installer | Open |
+| [#9](https://github.com/audiocontrol-org/midi-server/issues/9) | Add entitlements and packaging scripts | Open |
+| [#10](https://github.com/audiocontrol-org/midi-server/issues/10) | Set up code signing in CI | Open |
+| [#11](https://github.com/audiocontrol-org/midi-server/issues/11) | Add notarization to CI | Open |
+| [#12](https://github.com/audiocontrol-org/midi-server/issues/12) | Create GitHub Release workflow | Open |
+| [#13](https://github.com/audiocontrol-org/midi-server/issues/13) | Add installation documentation | Open |
 
 ## Phases
 
-### Phase 1: Packaging Scripts (Issue TBD)
+### Phase 1: Packaging Scripts ([#9](https://github.com/audiocontrol-org/midi-server/issues/9))
 
 **Objective:** Create the entitlements file and packaging infrastructure
 
@@ -33,7 +33,7 @@ Week of Feb 17-21
 - Scripts pass shellcheck linting
 - entitlements.plist is valid XML
 
-### Phase 2: Code Signing (Issue TBD)
+### Phase 2: Code Signing ([#10](https://github.com/audiocontrol-org/midi-server/issues/10))
 
 **Objective:** Configure code signing for the binary
 
@@ -47,7 +47,7 @@ Week of Feb 17-21
 - `codesign -dv --verbose=4` shows correct identity
 - Binary runs without Gatekeeper prompt (after notarization)
 
-### Phase 3: Package Creation (Issue TBD)
+### Phase 3: Package Creation (Part of [#9](https://github.com/audiocontrol-org/midi-server/issues/9))
 
 **Objective:** Create and sign the .pkg installer
 
@@ -61,7 +61,7 @@ Week of Feb 17-21
 - `pkgutil --check-signature` reports valid
 - Package installs correctly to `/usr/local/bin/`
 
-### Phase 4: Notarization (Issue TBD)
+### Phase 4: Notarization ([#11](https://github.com/audiocontrol-org/midi-server/issues/11))
 
 **Objective:** Submit to Apple for notarization and staple ticket
 
@@ -75,7 +75,7 @@ Week of Feb 17-21
 - `spctl --assess -vv --type install` shows "accepted"
 - Package installs without any Gatekeeper warnings
 
-### Phase 5: GitHub Release Workflow (Issue TBD)
+### Phase 5: GitHub Release Workflow ([#12](https://github.com/audiocontrol-org/midi-server/issues/12))
 
 **Objective:** Automate release builds with tag-triggered CI
 
@@ -91,7 +91,7 @@ Week of Feb 17-21
 - Release page contains downloadable .pkg
 - Downloaded .pkg passes verification
 
-### Phase 6: Documentation (Issue TBD)
+### Phase 6: Documentation ([#13](https://github.com/audiocontrol-org/midi-server/issues/13))
 
 **Objective:** Document installation process and troubleshooting
 
