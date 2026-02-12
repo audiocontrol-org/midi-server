@@ -1,6 +1,6 @@
 # Feature: Port MIDI HTTP Server Code
 
-**Status:** In Progress
+**Status:** Complete
 **Milestone:** Week of Feb 10-14
 **Branch:** `feature/port-code`
 
@@ -26,8 +26,8 @@ Port the JUCE-based MIDI HTTP server from `ol_dsp/modules/juce/midi-server/` to 
 - [x] MidiPort utilities ported
 - [x] httplib.h copied to deps/
 - [x] macOS build verified
-- [ ] Cross-platform CI builds verified
-- [ ] Documentation complete
+- [x] Cross-platform CI builds verified
+- [x] Documentation complete
 
 ## Source Code Location
 

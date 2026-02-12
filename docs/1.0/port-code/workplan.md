@@ -53,27 +53,27 @@ Week of Feb 10-14
 **Objective:** Verify builds on all platforms
 
 **Tasks:**
-- [ ] Test macOS build locally
-- [ ] Verify Linux build in CI
-- [ ] Verify Windows build in CI
-- [ ] Fix platform-specific issues
+- [x] Test macOS build locally
+- [x] Verify Linux build in CI
+- [x] Verify Windows build in CI
+- [x] Fix platform-specific issues (added missing Linux deps)
 
 **Verification:**
-- CI green on all platforms
-- Artifacts uploaded successfully
+- [x] CI green on all platforms
+- [x] Artifacts uploaded successfully
 
 ### Phase 4: Documentation (Issue #6)
 
 **Objective:** Complete documentation for users
 
 **Tasks:**
-- [ ] Expand README with full usage guide
-- [ ] Add API documentation
-- [ ] Create example client code (curl, Node.js)
-- [ ] Document build requirements per platform
+- [x] Expand README with full usage guide
+- [x] Add API documentation
+- [x] Create example client code (curl, Node.js)
+- [x] Document build requirements per platform
 
 **Verification:**
-- New user can build and run from README alone
+- [x] New user can build and run from README alone
 
 ## Dependencies
 
