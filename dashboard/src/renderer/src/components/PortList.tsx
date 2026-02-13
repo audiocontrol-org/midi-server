@@ -3,13 +3,20 @@ import type { MidiPort } from '@/types/api'
 interface PortListProps {
   title: string
   ports: MidiPort[]
+  openPortIds: Set<string>
   onPortClick?: (port: MidiPort) => void
-  selectedPortId?: number | null
+  selectedPortId?: string | null
+}
+
+function generatePortId(port: MidiPort): string {
+  // Create a URL-safe port ID from name and type
+  return `${port.type}-${port.id}`
 }
 
 export function PortList({
   title,
   ports,
+  openPortIds,
   onPortClick,
   selectedPortId
 }: PortListProps): React.JSX.Element {
@@ -26,21 +33,36 @@ export function PortList({
     <div className="bg-gray-800 rounded-lg p-4">
       <h3 className="text-lg font-semibold mb-3">{title}</h3>
       <ul className="space-y-2">
-        {ports.map((port) => (
-          <li key={port.id}>
-            <button
-              onClick={() => onPortClick?.(port)}
-              className={`w-full text-left px-3 py-2 rounded-md transition-colors ${
-                selectedPortId === port.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-              }`}
-            >
-              <span className="font-mono text-sm">[{port.id}]</span> <span>{port.name}</span>
-            </button>
-          </li>
-        ))}
+        {ports.map((port) => {
+          const portId = generatePortId(port)
+          const isOpen = openPortIds.has(portId)
+          const isSelected = selectedPortId === portId
+
+          return (
+            <li key={port.id}>
+              <button
+                onClick={() => onPortClick?.(port)}
+                className={`w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 ${
+                  isSelected
+                    ? 'bg-blue-600 text-white'
+                    : isOpen
+                      ? 'bg-green-700 hover:bg-green-600 text-white'
+                      : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${isOpen ? 'bg-green-400' : 'bg-gray-500'}`}
+                />
+                <span className="font-mono text-sm text-gray-400">[{port.id}]</span>
+                <span className="flex-1 truncate">{port.name}</span>
+                {isOpen && <span className="text-xs bg-green-800 px-1.5 py-0.5 rounded">Open</span>}
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
 }
+
+export { generatePortId }

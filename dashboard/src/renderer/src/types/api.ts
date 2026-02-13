@@ -14,11 +14,6 @@ export interface HealthResponse {
   uptime?: number
 }
 
-export interface OpenPortResponse {
-  success: boolean
-  port: MidiPort
-}
-
 export interface MidiMessage {
   timestamp: number
   data: number[]
@@ -28,16 +23,16 @@ export interface MessagesResponse {
   messages: MidiMessage[]
 }
 
-export interface SendMessageRequest {
-  data: number[]
-}
-
-export interface SendMessageResponse {
-  success: boolean
-}
-
 export interface ConnectionStatus {
   connected: boolean
   url: string | null
   error: string | null
+}
+
+// Open port state tracking
+export interface OpenPort {
+  portId: string
+  name: string
+  type: 'input' | 'output'
+  messages: MidiMessage[]
 }
