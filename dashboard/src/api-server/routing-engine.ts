@@ -88,7 +88,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     this.syncRoutePorts()
   }
 
-  private syncRoutePorts(): void {
+  private async syncRoutePorts(): Promise<void> {
     const enabledRoutes = this.storage.getEnabled()
     const neededPorts = new Map<string, { portId: string; serverUrl: string; type: 'input' | 'output'; name: string }>()
 
@@ -123,17 +123,21 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     }
 
     // Close ports that are no longer needed
+    const closePromises: Promise<void>[] = []
     for (const [key, state] of this.openPorts) {
       if (!neededPorts.has(key)) {
-        this.closePort(state.serverUrl, state.portId)
+        closePromises.push(this.closePort(state.serverUrl, state.portId))
         this.openPorts.delete(key)
       }
     }
+    await Promise.all(closePromises)
 
     // Open ports that are needed
+    const openPromises: Promise<void>[] = []
     for (const [key, port] of neededPorts) {
       if (!this.openPorts.has(key)) {
-        this.openPort(port.serverUrl, port.portId, port.name, port.type)
+        console.log(`[RoutingEngine] Opening port ${port.name} (${port.type}) on ${port.serverUrl}`)
+        openPromises.push(this.openPort(port.serverUrl, port.portId, port.name, port.type))
         this.openPorts.set(key, {
           portId: port.portId,
           serverUrl: port.serverUrl,
@@ -142,6 +146,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
         })
       }
     }
+    await Promise.all(openPromises)
 
     // Update statuses for disabled routes
     for (const route of this.storage.getAll()) {
