@@ -56,6 +56,9 @@ export interface PlatformServices {
   /** Get build information */
   getBuildInfo(): Promise<BuildInfo>
 
+  /** Get server configuration (auto-assigned ports) */
+  getConfig(): Promise<{ midiServerPort: number }>
+
   /** Subscribe to new log entries (returns unsubscribe function) */
   onLogEntry(callback: (entry: LogEntry) => void): () => void
 

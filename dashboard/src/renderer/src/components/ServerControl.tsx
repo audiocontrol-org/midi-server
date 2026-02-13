@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ConnectionStatus } from '@/types/api'
 import type { ServerProcess } from '@/platform'
 import { StatusIndicator } from '@/components/StatusIndicator'
+import { usePlatform } from '@/hooks/usePlatform'
 
 interface ServerControlProps {
   connectionStatus: ConnectionStatus
@@ -24,13 +25,21 @@ export function ServerControl({
   onStartServer,
   onStopServer
 }: ServerControlProps): React.JSX.Element {
-  const [serverPort, setServerPort] = useState(8080)
+  const platform = usePlatform()
+  const [midiPort, setMidiPort] = useState<number | null>(null)
+
+  // Fetch configured MIDI port
+  useEffect(() => {
+    platform.getConfig().then((config) => {
+      setMidiPort(config.midiServerPort)
+    }).catch(console.error)
+  }, [platform])
 
   const handleServerToggle = (): void => {
     if (serverProcess?.running) {
       onStopServer?.()
-    } else {
-      onStartServer?.(serverPort)
+    } else if (midiPort) {
+      onStartServer?.(midiPort)
     }
   }
 
@@ -55,25 +64,18 @@ export function ServerControl({
           <h3 className="text-sm font-medium text-gray-400 mb-2">Server Process</h3>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <label htmlFor="server-port" className="text-sm text-gray-400">
-                Port:
-              </label>
-              <input
-                id="server-port"
-                type="number"
-                value={serverPort}
-                onChange={(e) => setServerPort(Number(e.target.value))}
-                disabled={serverProcess?.running}
-                className="w-20 px-2 py-1 bg-gray-700 rounded border border-gray-600
-                           focus:border-blue-500 focus:outline-none disabled:opacity-50 text-sm"
-              />
+              <span className="text-sm text-gray-400">Port:</span>
+              <span className="text-sm text-white font-mono">
+                {midiPort ?? '...'}
+              </span>
             </div>
             <button
               onClick={handleServerToggle}
+              disabled={!midiPort}
               className={`px-4 py-1 rounded-md font-medium text-sm transition-colors ${
                 serverProcess?.running
                   ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-green-600 hover:bg-green-700'
+                  : 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
               }`}
             >
               {serverProcess?.running ? 'Stop Server' : 'Start Server'}

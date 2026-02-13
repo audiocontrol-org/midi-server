@@ -71,6 +71,10 @@ export class HttpPlatform implements PlatformServices {
     return this.request<BuildInfo>('/api/build-info')
   }
 
+  async getConfig(): Promise<{ midiServerPort: number }> {
+    return this.request<{ midiServerPort: number }>('/api/config')
+  }
+
   onLogEntry(callback: (entry: LogEntry) => void): () => void {
     this.logListeners.add(callback)
 

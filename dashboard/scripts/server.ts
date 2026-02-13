@@ -2,7 +2,7 @@
 /**
  * MIDI Server Dashboard
  *
- * Runs Vite with API middleware on port 3001.
+ * Runs Vite with API middleware. Automatically finds available ports.
  * Both Electron and browsers connect to this same server.
  *
  * Usage:
@@ -11,7 +11,8 @@
  */
 
 import { spawn, ChildProcess, execSync } from 'child_process'
-import { createServer, ViteDevServer } from 'vite'
+import { createServer as createViteServer, ViteDevServer } from 'vite'
+import { createServer as createNetServer } from 'net'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { readFileSync } from 'fs'
@@ -21,9 +22,29 @@ import { apiServerPlugin } from '../src/api-server/vite-plugin'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT_DIR = resolve(__dirname, '..')
-const SERVER_PORT = 3001
 
 const packageJson = JSON.parse(readFileSync(resolve(ROOT_DIR, 'package.json'), 'utf-8'))
+
+/**
+ * Get an available port from the OS by binding to port 0
+ */
+function getAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createNetServer()
+    server.once('error', reject)
+    server.once('listening', () => {
+      const addr = server.address()
+      if (addr && typeof addr === 'object') {
+        const port = addr.port
+        server.close(() => resolve(port))
+      } else {
+        server.close()
+        reject(new Error('Failed to get port from server address'))
+      }
+    })
+    server.listen(0)
+  })
+}
 
 function getBuildInfo() {
   const version = packageJson.version
@@ -38,10 +59,10 @@ function getBuildInfo() {
   return { version, commit, buildTime, serial: `v${version}-${commit}-${buildDate}` }
 }
 
-async function startServer(): Promise<ViteDevServer> {
+async function startServer(midiPort: number): Promise<{ server: ViteDevServer; apiPort: number }> {
   const midiServerBinaryPath = resolve(ROOT_DIR, '../build/MidiHttpServer_artefacts/Release/MidiHttpServer')
 
-  const server = await createServer({
+  const server = await createViteServer({
     configFile: false,
     root: resolve(ROOT_DIR, 'src/renderer'),
     resolve: {
@@ -57,22 +78,29 @@ async function startServer(): Promise<ViteDevServer> {
       react(),
       tailwindcss(),
       apiServerPlugin({
-        midiServerPort: 8080,
+        midiServerPort: midiPort,
         midiServerBinaryPath,
         version: packageJson.version
       })
     ],
     server: {
-      port: SERVER_PORT,
-      strictPort: true
+      port: 0, // Let OS assign an available port
+      strictPort: false,
+      host: '0.0.0.0' // Listen on all interfaces for cross-machine discovery
     }
   })
 
   await server.listen()
-  console.log(`\n  Dashboard: http://localhost:${SERVER_PORT}`)
-  console.log(`  API:       http://localhost:${SERVER_PORT}/api/health\n`)
 
-  return server
+  // Get the actual port Vite is listening on
+  const addr = server.httpServer?.address()
+  const apiPort = addr && typeof addr === 'object' ? addr.port : 3001
+
+  console.log(`\n  Dashboard: http://localhost:${apiPort}`)
+  console.log(`  API:       http://localhost:${apiPort}/api/health`)
+  console.log(`  MIDI Port: ${midiPort}\n`)
+
+  return { server, apiPort }
 }
 
 function buildElectron(): void {
@@ -80,12 +108,12 @@ function buildElectron(): void {
   execSync('npx electron-vite build --outDir out', { cwd: ROOT_DIR, stdio: 'inherit' })
 }
 
-function startElectron(): ChildProcess {
+function startElectron(serverPort: number): ChildProcess {
   const electron = spawn('npx', ['electron', '.'], {
     cwd: ROOT_DIR,
     stdio: 'inherit',
     shell: true,
-    env: { ...process.env, VITE_DEV_SERVER_URL: `http://localhost:${SERVER_PORT}` }
+    env: { ...process.env, VITE_DEV_SERVER_URL: `http://localhost:${serverPort}` }
   })
   return electron
 }
@@ -93,12 +121,19 @@ function startElectron(): ChildProcess {
 async function main() {
   const webOnly = process.argv.includes('--web')
 
-  const server = await startServer()
+  console.log('Finding available ports...')
+
+  // Get available ports from OS
+  const midiPort = await getAvailablePort()
+
+  console.log(`  MIDI server port: ${midiPort}`)
+
+  const { server, apiPort } = await startServer(midiPort)
 
   let electron: ChildProcess | null = null
   if (!webOnly) {
     buildElectron()
-    electron = startElectron()
+    electron = startElectron(apiPort)
     electron.on('close', (code) => {
       server.close().then(() => process.exit(code ?? 0))
     })

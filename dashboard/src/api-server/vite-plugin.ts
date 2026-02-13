@@ -39,11 +39,15 @@ export function apiServerPlugin(options: ApiServerPluginOptions): Plugin {
         }
       })
 
-      // Log that the API is available
+      // Initialize routing services after Vite's HTTP server starts listening
       server.httpServer?.once('listening', () => {
         const address = server.httpServer?.address()
         if (address && typeof address === 'object') {
-          console.log(`  ➜  API:     http://localhost:${address.port}/api/health`)
+          const actualPort = address.port
+          console.log(`  API:     http://localhost:${actualPort}/api/health`)
+
+          // Initialize routing services with the actual port
+          apiServer!.initializeRoutingServicesForMiddleware(actualPort)
         }
       })
     },

@@ -1,9 +1,14 @@
 import { createServer, IncomingMessage, ServerResponse, Server } from 'http'
 import { execSync } from 'child_process'
+import * as os from 'os'
 import type { ApiServerConfig, BuildInfo, LogEntry, LogSeverity } from './types'
 import { ProcessManager } from './process-manager'
 import { LogBuffer } from './log-buffer'
 import { proxyToMidiServer } from './midi-proxy'
+import { DiscoveryService } from './discovery'
+import { RoutesStorage } from './routes-storage'
+import { RoutingEngine } from './routing-engine'
+import { createRoutingHandlers, type RoutingHandlers } from './routing-handlers'
 
 export class ApiServer {
   private server: Server | null = null
@@ -12,6 +17,12 @@ export class ApiServer {
   private config: ApiServerConfig
   private buildInfo: BuildInfo
   private sseClients: Set<ServerResponse> = new Set()
+
+  // Routing services
+  private discovery: DiscoveryService | null = null
+  private routesStorage: RoutesStorage | null = null
+  private routingEngine: RoutingEngine | null = null
+  private routingHandlers: RoutingHandlers | null = null
 
   constructor(config: ApiServerConfig, buildInfo: BuildInfo) {
     this.config = config
@@ -38,14 +49,70 @@ export class ApiServer {
       })
 
       this.server.listen(this.config.apiPort, () => {
-        console.log(`API server listening on http://localhost:${this.config.apiPort}`)
+        const localUrl = this.getLocalServerUrl()
+        console.log(`API server listening on ${localUrl}`)
+
+        // Initialize routing services
+        this.initializeRoutingServices(localUrl)
+
         resolve()
       })
     })
   }
 
+  private getLocalServerUrl(port?: number): string {
+    const actualPort = port ?? this.config.apiPort
+    // Get the first non-internal IPv4 address for the API URL
+    const interfaces = os.networkInterfaces()
+    for (const iface of Object.values(interfaces)) {
+      if (!iface) continue
+      for (const info of iface) {
+        if (info.family === 'IPv4' && !info.internal) {
+          return `http://${info.address}:${actualPort}`
+        }
+      }
+    }
+    return `http://localhost:${actualPort}`
+  }
+
+  /**
+   * Initialize routing services when running as Vite middleware.
+   * Called by vite-plugin after the HTTP server starts listening.
+   */
+  initializeRoutingServicesForMiddleware(actualPort: number): void {
+    const localUrl = this.getLocalServerUrl(actualPort)
+    this.initializeRoutingServices(localUrl)
+  }
+
+  private initializeRoutingServices(localUrl: string): void {
+    this.routesStorage = new RoutesStorage()
+    this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
+    this.routingEngine = new RoutingEngine(this.routesStorage, localUrl)
+
+    this.routingHandlers = createRoutingHandlers({
+      discovery: this.discovery,
+      routes: this.routesStorage,
+      routingEngine: this.routingEngine,
+      localServerUrl: localUrl
+    })
+
+    // Start services
+    this.discovery.start()
+    this.routingEngine.start()
+
+    console.log('[ApiServer] Routing services initialized')
+  }
+
   async stop(): Promise<void> {
-    // Stop MIDI server first
+    // Stop routing services
+    if (this.routingEngine) {
+      this.routingEngine.stop()
+    }
+    if (this.discovery) {
+      this.discovery.stop()
+    }
+
+    // Stop MIDI server
     await this.processManager.stop()
 
     // Close SSE connections
@@ -67,7 +134,7 @@ export class ApiServer {
   async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
     if (req.method === 'OPTIONS') {
@@ -76,55 +143,106 @@ export class ApiServer {
       return
     }
 
-    // Parse path from request URL (works with both standalone server and Vite middleware)
     const reqUrl = req.url || '/'
     const path = reqUrl.split('?')[0]
 
     try {
-      // API routes
+      // Core API routes
       if (path === '/api/health') {
         return this.handleHealth(res)
       }
-
       if (path === '/api/status') {
         return this.handleStatus(res)
       }
-
       if (path === '/api/server/start' && req.method === 'POST') {
         return await this.handleServerStart(req, res)
       }
-
       if (path === '/api/server/stop' && req.method === 'POST') {
         return await this.handleServerStop(res)
       }
-
       if (path === '/api/logs' && req.method === 'GET') {
         return this.handleGetLogs(res)
       }
-
       if (path === '/api/logs' && req.method === 'DELETE') {
         return this.handleClearLogs(res)
       }
-
       if (path === '/api/logs' && req.method === 'POST') {
         return await this.handleAddLog(req, res)
       }
-
       if (path === '/api/logs/stream' && req.method === 'GET') {
         return this.handleLogStream(res)
       }
-
       if (path === '/api/build-info') {
         return this.handleBuildInfo(res)
+      }
+
+      if (path === '/api/config') {
+        return this.handleConfig(res)
+      }
+
+      // Discovery routes
+      if (this.routingHandlers) {
+        if (path === '/api/discovery/servers' && req.method === 'GET') {
+          return this.routingHandlers.handleDiscoveryServers(res)
+        }
+        if (path === '/api/discovery/status' && req.method === 'GET') {
+          return this.routingHandlers.handleDiscoveryStatus(res)
+        }
+        if (path === '/api/discovery/name' && req.method === 'POST') {
+          return await this.routingHandlers.handleDiscoverySetName(req, res)
+        }
+
+        // Route management routes
+        if (path === '/api/routes' && req.method === 'GET') {
+          return this.routingHandlers.handleGetRoutes(res)
+        }
+        if (path === '/api/routes' && req.method === 'POST') {
+          return await this.routingHandlers.handleCreateRoute(req, res)
+        }
+
+        // Route CRUD with ID
+        const routeMatch = path.match(/^\/api\/routes\/([^/]+)$/)
+        if (routeMatch) {
+          const routeId = routeMatch[1]
+          if (req.method === 'PUT') {
+            return await this.routingHandlers.handleUpdateRoute(req, res, routeId)
+          }
+          if (req.method === 'DELETE') {
+            return this.routingHandlers.handleDeleteRoute(res, routeId)
+          }
+        }
+
+        // Remote server proxy routes
+        const serverPortsMatch = path.match(/^\/api\/servers\/([^/]+)\/ports$/)
+        if (serverPortsMatch && req.method === 'GET') {
+          return await this.routingHandlers.handleRemoteServerPorts(res, serverPortsMatch[1])
+        }
+
+        const serverHealthMatch = path.match(/^\/api\/servers\/([^/]+)\/health$/)
+        if (serverHealthMatch && req.method === 'GET') {
+          return await this.routingHandlers.handleRemoteServerHealth(res, serverHealthMatch[1])
+        }
+
+        const serverSendMatch = path.match(/^\/api\/servers\/([^/]+)\/port\/([^/]+)\/send$/)
+        if (serverSendMatch && req.method === 'POST') {
+          return await this.routingHandlers.handleRemoteServerSend(
+            req,
+            res,
+            serverSendMatch[1],
+            serverSendMatch[2]
+          )
+        }
       }
 
       // Proxy to MIDI server (strip /midi prefix)
       if (path.startsWith('/midi')) {
         const midiPath = path.slice(5) || '/'
-        return await proxyToMidiServer(req, res, {
-          targetHost: 'localhost',
-          targetPort: this.config.midiServerPort
-        }, midiPath)
+        return await proxyToMidiServer(
+          req,
+          res,
+          { targetHost: 'localhost', targetPort: this.config.midiServerPort },
+          midiPath
+        )
       }
 
       // 404 for unknown routes
@@ -198,17 +316,13 @@ export class ApiServer {
   }
 
   private handleLogStream(res: ServerResponse): void {
-    // Server-Sent Events for real-time log streaming
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
 
     this.sseClients.add(res)
-
-    // Send initial data
     res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`)
 
-    // Handle client disconnect
     res.on('close', () => {
       this.sseClients.delete(res)
     })
@@ -224,6 +338,13 @@ export class ApiServer {
   private handleBuildInfo(res: ServerResponse): void {
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(this.buildInfo))
+  }
+
+  private handleConfig(res: ServerResponse): void {
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({
+      midiServerPort: this.config.midiServerPort
+    }))
   }
 
   private readJsonBody<T>(req: IncomingMessage): Promise<T | null> {

@@ -39,6 +39,18 @@ public:
     void startServer() {
         server = std::make_unique<httplib::Server>();
 
+        // Add CORS headers to all responses
+        server->set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Headers", "Content-Type");
+        });
+
+        // Handle CORS preflight requests
+        server->Options(".*", [](const httplib::Request&, httplib::Response& res) {
+            res.status = 204;
+        });
+
         // Health check endpoint
         server->Get("/health", [this](const httplib::Request&, httplib::Response& res) {
             JsonBuilder json;
