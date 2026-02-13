@@ -1,10 +1,11 @@
-import type { LogEntry, LogSeverity } from '@shared/types/log-entry'
+import type { LogEntry, LogSeverity } from './types'
 
 const MAX_ENTRIES = 1000
 
 export class LogBuffer {
   private entries: LogEntry[] = []
   private idCounter = 0
+  private listeners: Set<(entry: LogEntry) => void> = new Set()
 
   add(message: string, severity: LogSeverity, source: LogEntry['source'] = 'system'): LogEntry {
     const entry: LogEntry = {
@@ -17,11 +18,11 @@ export class LogBuffer {
 
     this.entries.push(entry)
 
-    // Trim to max size
     if (this.entries.length > MAX_ENTRIES) {
       this.entries = this.entries.slice(-MAX_ENTRIES)
     }
 
+    this.notifyListeners(entry)
     return entry
   }
 
@@ -35,6 +36,19 @@ export class LogBuffer {
 
   get length(): number {
     return this.entries.length
+  }
+
+  subscribe(callback: (entry: LogEntry) => void): () => void {
+    this.listeners.add(callback)
+    return () => {
+      this.listeners.delete(callback)
+    }
+  }
+
+  private notifyListeners(entry: LogEntry): void {
+    for (const listener of this.listeners) {
+      listener(entry)
+    }
   }
 }
 

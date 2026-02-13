@@ -7,7 +7,7 @@ interface ServerControlProps {
   connectionStatus: ConnectionStatus
   serverProcess: ServerProcess | null
   canManageServer: boolean
-  onConnect: (url: string) => void
+  onConnect: () => void
   onDisconnect: () => void
   onRefresh: () => void
   onStartServer?: (port: number) => void
@@ -24,23 +24,21 @@ export function ServerControl({
   onStartServer,
   onStopServer
 }: ServerControlProps): React.JSX.Element {
-  const [url, setUrl] = useState(connectionStatus.url || 'http://localhost:8080')
   const [serverPort, setServerPort] = useState(8080)
-
-  const handleConnectSubmit = (e: React.FormEvent): void => {
-    e.preventDefault()
-    if (connectionStatus.connected) {
-      onDisconnect()
-    } else {
-      onConnect(url)
-    }
-  }
 
   const handleServerToggle = (): void => {
     if (serverProcess?.running) {
       onStopServer?.()
     } else {
       onStartServer?.(serverPort)
+    }
+  }
+
+  const handleConnectionToggle = (): void => {
+    if (connectionStatus.connected) {
+      onDisconnect()
+    } else {
+      onConnect()
     }
   }
 
@@ -51,7 +49,7 @@ export function ServerControl({
         <StatusIndicator connected={connectionStatus.connected} />
       </div>
 
-      {/* Server Process Control (Electron only) */}
+      {/* Server Process Control */}
       {canManageServer && (
         <div className="border-b border-gray-700 pb-4">
           <h3 className="text-sm font-medium text-gray-400 mb-2">Server Process</h3>
@@ -87,51 +85,37 @@ export function ServerControl({
         </div>
       )}
 
-      {/* Connection Control */}
-      <form onSubmit={handleConnectSubmit} className="space-y-3">
-        <div>
-          <label htmlFor="server-url" className="block text-sm text-gray-400 mb-1">
-            {canManageServer ? 'Server URL (auto-filled when running)' : 'Server URL'}
-          </label>
-          <input
-            id="server-url"
-            type="text"
-            value={canManageServer && serverProcess?.url ? serverProcess.url : url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={connectionStatus.connected || (canManageServer && serverProcess?.running)}
-            className="w-full px-3 py-2 bg-gray-700 rounded-md border border-gray-600
-                       focus:border-blue-500 focus:outline-none disabled:opacity-50"
-            placeholder="http://localhost:8080"
-          />
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
-              connectionStatus.connected
-                ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-          >
-            {connectionStatus.connected ? 'Disconnect' : 'Connect'}
-          </button>
-
-          {connectionStatus.connected && (
+      {/* Connection Status - only show when server is running */}
+      {serverProcess?.running && (
+        <div className="space-y-3">
+          <div className="flex gap-2">
             <button
-              type="button"
-              onClick={onRefresh}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              onClick={handleConnectionToggle}
+              className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                connectionStatus.connected
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              Refresh
+              {connectionStatus.connected ? 'Disconnect' : 'Connect'}
             </button>
-          )}
-        </div>
-      </form>
 
-      {connectionStatus.error && (
-        <div className="p-3 bg-red-900/50 border border-red-700 rounded-md">
-          <p className="text-red-300 text-sm">{connectionStatus.error}</p>
+            {connectionStatus.connected && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              >
+                Refresh
+              </button>
+            )}
+          </div>
+
+          {connectionStatus.error && (
+            <div className="p-3 bg-red-900/50 border border-red-700 rounded-md">
+              <p className="text-red-300 text-sm">{connectionStatus.error}</p>
+            </div>
+          )}
         </div>
       )}
     </div>

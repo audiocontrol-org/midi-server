@@ -10,7 +10,7 @@ import type { ServerProcess, BuildInfo } from '@/platform'
 
 export function Dashboard(): React.JSX.Element {
   const platform = usePlatform()
-  const { status, ports, connect, disconnect, refresh } = useServerConnection()
+  const { status, ports, connect, disconnect, refresh } = useServerConnection({ autoConnect: false })
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -30,8 +30,8 @@ export function Dashboard(): React.JSX.Element {
         setServerProcess(processStatus)
 
         // Auto-connect when server starts
-        if (processStatus.running && processStatus.url && !status.connected) {
-          connect(processStatus.url)
+        if (processStatus.running && !status.connected) {
+          connect()
         }
       } catch (err) {
         console.error('Failed to get server status:', err)
@@ -48,9 +48,7 @@ export function Dashboard(): React.JSX.Element {
       try {
         const process = await platform.startServer(port)
         setServerProcess(process)
-        if (process.url) {
-          connect(process.url)
-        }
+        connect()
       } catch (err) {
         console.error('Failed to start server:', err)
       }

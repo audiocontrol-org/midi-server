@@ -5,6 +5,7 @@ import type { ConnectionStatus, PortsResponse, HealthResponse } from '@/types/ap
 
 interface UseServerConnectionOptions {
   pollInterval?: number
+  autoConnect?: boolean
 }
 
 interface UseServerConnectionReturn {
@@ -12,7 +13,7 @@ interface UseServerConnectionReturn {
   health: HealthResponse | null
   ports: PortsResponse | null
   client: MidiServerClient | null
-  connect: (url: string) => void
+  connect: () => void
   disconnect: () => void
   refresh: () => Promise<void>
 }
@@ -20,7 +21,7 @@ interface UseServerConnectionReturn {
 export function useServerConnection(
   options: UseServerConnectionOptions = {}
 ): UseServerConnectionReturn {
-  const { pollInterval = 5000 } = options
+  const { pollInterval = 5000, autoConnect = true } = options
 
   const [status, setStatus] = useState<ConnectionStatus>({
     connected: false,
@@ -62,24 +63,24 @@ export function useServerConnection(
     }
   }, [])
 
-  const connect = useCallback(
-    (url: string) => {
-      clientRef.current = createClient(url)
-      setStatus({
-        connected: false,
-        url,
-        error: null
-      })
+  const connect = useCallback(() => {
+    // Create client connected to API server's MIDI proxy
+    clientRef.current = createClient()
+    const apiUrl = platform.apiBaseUrl
 
-      refresh()
+    setStatus({
+      connected: false,
+      url: apiUrl,
+      error: null
+    })
 
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-      }
-      pollIntervalRef.current = window.setInterval(refresh, pollInterval)
-    },
-    [refresh, pollInterval]
-  )
+    refresh()
+
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+    }
+    pollIntervalRef.current = window.setInterval(refresh, pollInterval)
+  }, [refresh, pollInterval])
 
   const disconnect = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -96,13 +97,18 @@ export function useServerConnection(
     setPorts(null)
   }, [])
 
+  // Auto-connect on mount if enabled
   useEffect(() => {
+    if (autoConnect) {
+      connect()
+    }
+
     return (): void => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
       }
     }
-  }, [])
+  }, [autoConnect, connect])
 
   return {
     status,

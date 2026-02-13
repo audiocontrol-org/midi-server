@@ -8,7 +8,7 @@ export type { PlatformServices, ServerProcess, LogEntry, LogSeverity, BuildInfo 
  * Detect if running in Electron environment
  */
 export function isElectron(): boolean {
-  return typeof window !== 'undefined' && window.electronAPI !== undefined
+  return typeof window !== 'undefined' && window.electronAPI?.isElectron === true
 }
 
 /**

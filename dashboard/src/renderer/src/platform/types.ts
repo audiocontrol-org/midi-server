@@ -1,4 +1,19 @@
-import type { LogEntry, LogSeverity, BuildInfo } from '@shared/types/log-entry'
+export type LogSeverity = 'debug' | 'info' | 'warning' | 'error'
+
+export interface LogEntry {
+  id: string
+  timestamp: number
+  severity: LogSeverity
+  message: string
+  source: 'server' | 'dashboard' | 'system'
+}
+
+export interface BuildInfo {
+  version: string
+  commit: string
+  buildTime: string
+  serial: string
+}
 
 export interface ServerProcess {
   running: boolean
@@ -11,13 +26,16 @@ export interface PlatformServices {
   /** Platform identifier */
   readonly name: 'electron' | 'web'
 
-  /** Whether this platform can manage the server process */
+  /** API server base URL */
+  readonly apiBaseUrl: string
+
+  /** Whether this platform can manage the server process (always true with API server) */
   readonly canManageServer: boolean
 
-  /** Start the MIDI HTTP Server (Electron only) */
-  startServer(port: number): Promise<ServerProcess>
+  /** Start the MIDI HTTP Server */
+  startServer(port?: number): Promise<ServerProcess>
 
-  /** Stop the MIDI HTTP Server (Electron only) */
+  /** Stop the MIDI HTTP Server */
   stopServer(): Promise<void>
 
   /** Get current server process status */
@@ -44,5 +62,3 @@ export interface PlatformServices {
   /** Add a log entry from the dashboard */
   addLog(message: string, severity: LogSeverity): void
 }
-
-export type { LogEntry, LogSeverity, BuildInfo } from '@shared/types/log-entry'
