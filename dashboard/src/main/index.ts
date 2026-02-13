@@ -1,13 +1,9 @@
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { spawn, ChildProcess } from 'child_process'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindow: BrowserWindow | null = null
-let viteProcess: ChildProcess | null = null
-
-const SERVER_PORT = 3001
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -33,82 +29,21 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // Load from the Vite server (same URL for Electron and browser)
-  mainWindow.loadURL(`http://localhost:${SERVER_PORT}`)
-}
-
-async function waitForServer(url: string, timeoutMs: number): Promise<boolean> {
-  const startTime = Date.now()
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(url)
-      if (response.ok) return true
-    } catch {
-      // Server not ready yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  return false
-}
-
-async function startViteServer(): Promise<void> {
-  const viteConfigPath = join(app.getAppPath(), 'vite.electron.config.ts')
-
-  console.log('Starting Vite server...')
-
-  viteProcess = spawn('npx', ['vite', '--config', viteConfigPath, '--port', String(SERVER_PORT)], {
-    cwd: app.getAppPath(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: true
-  })
-
-  viteProcess.stdout?.on('data', (data) => {
-    console.log(`[vite] ${data.toString().trim()}`)
-  })
-
-  viteProcess.stderr?.on('data', (data) => {
-    console.error(`[vite] ${data.toString().trim()}`)
-  })
-
-  viteProcess.on('error', (err) => {
-    console.error('Failed to start Vite:', err)
-  })
-
-  viteProcess.on('exit', (code) => {
-    console.log(`Vite process exited with code ${code}`)
-    viteProcess = null
-  })
-
-  // Wait for server to be ready
-  const ready = await waitForServer(`http://localhost:${SERVER_PORT}/api/health`, 30000)
-  if (ready) {
-    console.log(`Vite server running at http://localhost:${SERVER_PORT}`)
-    console.log(`  → Electron and browser can both access this URL`)
+  // In development, load from Vite server (set by dev script)
+  // In production, load built files
+  if (is.dev && process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    console.error('Vite server failed to start')
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
-function stopViteServer(): void {
-  if (viteProcess) {
-    console.log('Stopping Vite server...')
-    viteProcess.kill('SIGTERM')
-    viteProcess = null
-  }
-}
-
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.audiocontrol.midi-dashboard')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
-
-  // In development, start our own Vite server
-  // In production, we'd serve static files instead
-  if (is.dev) {
-    await startViteServer()
-  }
 
   createWindow()
 
@@ -121,8 +56,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
-})
-
-app.on('before-quit', () => {
-  stopViteServer()
 })

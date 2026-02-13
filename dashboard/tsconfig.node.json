@@ -4,6 +4,7 @@
     "electron.vite.config.*",
     "vite.web.config.*",
     "vite.electron.config.*",
+    "scripts/**/*",
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
