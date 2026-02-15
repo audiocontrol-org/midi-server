@@ -235,6 +235,26 @@ export class ApiClient {
       body: JSON.stringify({ message })
     })
   }
+
+  // Remote server management endpoints
+  async getRemoteServerStatus(serverUrl: string): Promise<{ running: boolean; pid: number | null; port: number | null }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ running: boolean; pid: number | null; port: number | null }>(`/api/servers/${encodedUrl}/status`)
+  }
+
+  async startRemoteServer(serverUrl: string): Promise<{ running: boolean; pid: number | null; port: number | null }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ running: boolean; pid: number | null; port: number | null }>(`/api/servers/${encodedUrl}/start`, {
+      method: 'POST'
+    })
+  }
+
+  async stopRemoteServer(serverUrl: string): Promise<{ success: boolean }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ success: boolean }>(`/api/servers/${encodedUrl}/stop`, {
+      method: 'POST'
+    })
+  }
 }
 
 export const createClient = (baseUrl?: string): MidiServerClient => new MidiServerClient(baseUrl)

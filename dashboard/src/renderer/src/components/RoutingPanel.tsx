@@ -69,11 +69,19 @@ export function RoutingPanel({
               className="bg-gray-700 rounded-lg p-3 flex items-center justify-between"
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
-                {/* Status indicator */}
-                <span
-                  className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${getStatusColor(route.status?.status ?? 'disabled')}`}
-                  title={route.status?.error ?? getStatusLabel(route.status?.status ?? 'disabled')}
-                />
+                {/* Status indicator with tooltip */}
+                <div className="relative group flex-shrink-0">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full block cursor-help ${getStatusColor(route.status?.status ?? 'disabled')}`}
+                  />
+                  {route.status?.error && (
+                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-10">
+                      <div className="bg-gray-900 text-red-400 text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap max-w-xs truncate">
+                        {route.status.error}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Route description */}
                 <div className="flex items-center gap-2 min-w-0 flex-1">

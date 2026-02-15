@@ -1,0 +1,22 @@
+#!/bin/bash
+# Pre-install script for MIDI HTTP Server
+# Runs before package installation
+
+set -e
+
+INSTALL_PATH="/usr/local/bin/midi-http-server"
+
+# Stop any running instance
+if pgrep -x "midi-http-server" > /dev/null 2>&1; then
+    echo "Stopping running midi-http-server..."
+    pkill -x "midi-http-server" || true
+    sleep 1
+fi
+
+# Remove existing binary if present (will be replaced)
+if [ -f "$INSTALL_PATH" ]; then
+    echo "Removing existing installation..."
+    rm -f "$INSTALL_PATH"
+fi
+
+exit 0

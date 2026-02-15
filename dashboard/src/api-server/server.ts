@@ -232,6 +232,21 @@ export class ApiServer {
             serverSendMatch[2]
           )
         }
+
+        const serverStatusMatch = path.match(/^\/api\/servers\/([^/]+)\/status$/)
+        if (serverStatusMatch && req.method === 'GET') {
+          return await this.routingHandlers.handleRemoteServerStatus(res, serverStatusMatch[1])
+        }
+
+        const serverStartMatch = path.match(/^\/api\/servers\/([^/]+)\/start$/)
+        if (serverStartMatch && req.method === 'POST') {
+          return await this.routingHandlers.handleRemoteServerStart(res, serverStartMatch[1])
+        }
+
+        const serverStopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
+        if (serverStopMatch && req.method === 'POST') {
+          return await this.routingHandlers.handleRemoteServerStop(res, serverStopMatch[1])
+        }
       }
 
       // Proxy to MIDI server (strip /midi prefix)

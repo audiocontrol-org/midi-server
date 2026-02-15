@@ -192,6 +192,65 @@ export function createRoutingHandlers(services: RoutingServices) {
     }
   }
 
+  async function handleRemoteServerStatus(res: ServerResponse, encodedUrl: string): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+      const response = await fetch(`${serverUrl}/api/status`)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      const status = await response.json()
+      sendJson(res, status)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to get server status: ${message}`, 502)
+    }
+  }
+
+  async function handleRemoteServerStart(res: ServerResponse, encodedUrl: string): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+      const response = await fetch(`${serverUrl}/api/server/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (!response.ok) {
+        const body = await response.text()
+        let errorMsg = `HTTP ${response.status}`
+        try {
+          const json = JSON.parse(body)
+          if (json.error) errorMsg = json.error
+        } catch {
+          // Use default
+        }
+        throw new Error(errorMsg)
+      }
+      const status = await response.json()
+      sendJson(res, status)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to start server: ${message}`, 502)
+    }
+  }
+
+  async function handleRemoteServerStop(res: ServerResponse, encodedUrl: string): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+      const response = await fetch(`${serverUrl}/api/server/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      const result = await response.json()
+      sendJson(res, result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to stop server: ${message}`, 502)
+    }
+  }
+
   return {
     handleDiscoveryServers,
     handleDiscoveryStatus,
@@ -202,7 +261,10 @@ export function createRoutingHandlers(services: RoutingServices) {
     handleDeleteRoute,
     handleRemoteServerPorts,
     handleRemoteServerHealth,
-    handleRemoteServerSend
+    handleRemoteServerSend,
+    handleRemoteServerStatus,
+    handleRemoteServerStart,
+    handleRemoteServerStop
   }
 }
 

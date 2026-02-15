@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useServerConnection } from '@/hooks/useServerConnection'
 import { usePlatform } from '@/hooks/usePlatform'
 import { ServerControl } from '@/components/ServerControl'
+import { RemoteServerControl } from '@/components/RemoteServerControl'
 import { PortList, generatePortId } from '@/components/PortList'
 import { PortDetail } from '@/components/PortDetail'
 import { BuildInfoButton } from '@/components/BuildInfoButton'
@@ -328,6 +329,22 @@ export function Dashboard(): React.JSX.Element {
     [localServerUrl, ports]
   )
 
+  // Remote server management callbacks
+  const getRemoteServerStatus = useCallback(
+    (serverUrl: string) => apiClientRef.current.getRemoteServerStatus(serverUrl),
+    []
+  )
+
+  const startRemoteServer = useCallback(
+    (serverUrl: string) => apiClientRef.current.startRemoteServer(serverUrl),
+    []
+  )
+
+  const stopRemoteServer = useCallback(
+    (serverUrl: string) => apiClientRef.current.stopRemoteServer(serverUrl),
+    []
+  )
+
   const selectedPort = selectedPortId ? openPorts.get(selectedPortId) : null
   const openPortIds = new Set(openPorts.keys())
   const isViewingLocalServer = selectedServerUrl === localServerUrl
@@ -381,25 +398,16 @@ export function Dashboard(): React.JSX.Element {
           />
         )}
 
-        {/* Remote server status */}
+        {/* Remote server control */}
         {!isViewingLocalServer && selectedServerUrl && (
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <span
-                className={`w-3 h-3 rounded-full ${
-                  serverStatuses.get(selectedServerUrl) === 'connected'
-                    ? 'bg-green-500'
-                    : serverStatuses.get(selectedServerUrl) === 'checking'
-                      ? 'bg-yellow-500'
-                      : 'bg-red-500'
-                }`}
-              />
-              <span className="text-white">
-                {discoveredServers.find((s) => s.apiUrl === selectedServerUrl)?.serverName ?? 'Remote Server'}
-              </span>
-              <span className="text-gray-500 text-sm">{selectedServerUrl}</span>
-            </div>
-          </div>
+          <RemoteServerControl
+            serverUrl={selectedServerUrl}
+            serverName={discoveredServers.find((s) => s.apiUrl === selectedServerUrl)?.serverName ?? 'Remote Server'}
+            connectionStatus={serverStatuses.get(selectedServerUrl) ?? 'disconnected'}
+            getStatus={getRemoteServerStatus}
+            startServer={startRemoteServer}
+            stopServer={stopRemoteServer}
+          />
         )}
 
         {/* Port lists and details */}

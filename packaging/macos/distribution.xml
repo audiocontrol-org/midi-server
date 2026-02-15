@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>MIDI HTTP Server</title>
+    <organization>com.audiocontrol</organization>
+    <domains enable_localSystem="true" enable_currentUserHome="false"/>
+
+    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+
+    <!-- Minimum macOS version -->
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="12.0"/>
+        </allowed-os-versions>
+    </volume-check>
+
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.audiocontrol.midi-http-server"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+
+    <choice id="com.audiocontrol.midi-http-server"
+            visible="false"
+            title="MIDI HTTP Server"
+            description="HTTP-to-MIDI bridge server">
+        <pkg-ref id="com.audiocontrol.midi-http-server"/>
+    </choice>
+
+    <pkg-ref id="com.audiocontrol.midi-http-server"
+             version="0.0.0"
+             onConclusion="none">midi-http-server.pkg</pkg-ref>
+</installer-gui-script>

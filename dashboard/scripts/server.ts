@@ -59,7 +59,7 @@ function getBuildInfo() {
   return { version, commit, buildTime, serial: `v${version}-${commit}-${buildDate}` }
 }
 
-async function startServer(midiPort: number): Promise<{ server: ViteDevServer; apiPort: number }> {
+async function startServer(midiPort: number, forcedApiPort?: number | null): Promise<{ server: ViteDevServer; apiPort: number }> {
   const midiServerBinaryPath = resolve(ROOT_DIR, '../build/MidiHttpServer_artefacts/Release/MidiHttpServer')
 
   const server = await createViteServer({
@@ -84,8 +84,8 @@ async function startServer(midiPort: number): Promise<{ server: ViteDevServer; a
       })
     ],
     server: {
-      port: 0, // Let OS assign an available port
-      strictPort: false,
+      port: forcedApiPort ?? 0, // Let OS assign an available port or use forced port
+      strictPort: !!forcedApiPort,
       host: '0.0.0.0' // Listen on all interfaces for cross-machine discovery
     }
   })
@@ -120,18 +120,23 @@ function startElectron(serverPort: number): ChildProcess {
 
 async function main() {
   const webOnly = process.argv.includes('--web')
+  const headless = process.env.HEADLESS === '1'
 
   console.log('Finding available ports...')
 
-  // Get available ports from OS
-  const midiPort = await getAvailablePort()
+  // Support forced ports for integration testing
+  const forcedMidiPort = process.env.FORCE_MIDI_PORT ? parseInt(process.env.FORCE_MIDI_PORT, 10) : null
+  const forcedApiPort = process.env.FORCE_API_PORT ? parseInt(process.env.FORCE_API_PORT, 10) : null
+
+  // Get available ports from OS (or use forced ports)
+  const midiPort = forcedMidiPort ?? await getAvailablePort()
 
   console.log(`  MIDI server port: ${midiPort}`)
 
-  const { server, apiPort } = await startServer(midiPort)
+  const { server, apiPort } = await startServer(midiPort, forcedApiPort)
 
   let electron: ChildProcess | null = null
-  if (!webOnly) {
+  if (!webOnly && !headless) {
     buildElectron()
     electron = startElectron(apiPort)
     electron.on('close', (code) => {
