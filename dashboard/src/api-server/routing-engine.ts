@@ -31,6 +31,9 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
   private running = false
   private routeStatuses: Map<string, RouteStatus> = new Map()
   private openPorts: Map<string, OpenPortState> = new Map()
+  private lastErrorLog: Map<string, number> | null = null
+  private syncInProgress = false
+  private syncPending = false
 
   constructor(storage: RoutesStorage, _localServerUrl: string) {
     super()
@@ -52,7 +55,10 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     }
 
     // Open ports for enabled routes
-    this.syncRoutePorts()
+    console.log('[RoutingEngine] start() triggering sync')
+    this.syncInProgress = true
+    this.syncPending = false
+    this.doSyncRoutePorts()
 
     // Start polling for messages
     this.pollTimer = setInterval(() => this.pollRoutes(), POLL_INTERVAL)
@@ -85,10 +91,39 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   // Called when routes are added/updated/deleted
   onRoutesChanged(): void {
-    this.syncRoutePorts()
+    console.log(`[RoutingEngine] onRoutesChanged() called, syncInProgress=${this.syncInProgress}`)
+    // Prevent concurrent syncs - queue if one is in progress
+    if (this.syncInProgress) {
+      console.log('[RoutingEngine] sync in progress, queueing')
+      this.syncPending = true
+      return
+    }
+    // Set flag BEFORE calling async function to prevent race
+    console.log('[RoutingEngine] onRoutesChanged() triggering sync')
+    this.syncInProgress = true
+    this.syncPending = false
+    this.doSyncRoutePorts()
   }
 
+  private async doSyncRoutePorts(): Promise<void> {
+    try {
+      await this.syncRoutePorts()
+    } finally {
+      this.syncInProgress = false
+      // If another sync was requested while we were running, do it now
+      if (this.syncPending) {
+        this.syncInProgress = true
+        this.syncPending = false
+        this.doSyncRoutePorts()
+      }
+    }
+  }
+
+  private syncId = 0
+
   private async syncRoutePorts(): Promise<void> {
+    const syncId = ++this.syncId
+    console.log(`[RoutingEngine] syncRoutePorts #${syncId} starting`)
     const enabledRoutes = this.storage.getEnabled()
     const neededPorts = new Map<string, { portId: string; serverUrl: string; type: 'input' | 'output'; name: string }>()
 
@@ -136,7 +171,6 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     const openPromises: Promise<void>[] = []
     for (const [key, port] of neededPorts) {
       if (!this.openPorts.has(key)) {
-        console.log(`[RoutingEngine] Opening port ${port.name} (${port.type}) on ${port.serverUrl}`)
         openPromises.push(this.openPort(port.serverUrl, port.portId, port.name, port.type))
         this.openPorts.set(key, {
           portId: port.portId,
@@ -169,8 +203,10 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   private async openPort(serverUrl: string, portId: string, name: string, type: 'input' | 'output'): Promise<void> {
     try {
+      console.log(`[RoutingEngine] Opening port ${name} (${type}) on ${serverUrl}`)
       const client = getRemoteClient(serverUrl)
-      await client.openPort(portId, name, type)
+      const result = await client.openPort(portId, name, type)
+      console.log(`[RoutingEngine] Port ${portId} opened: ${JSON.stringify(result)}`)
     } catch (err) {
       console.error(`[RoutingEngine] Failed to open port ${portId} on ${serverUrl}:`, err)
     }
@@ -194,8 +230,16 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     this.openPorts.clear()
   }
 
+  private pollCount = 0
+
   private async pollRoutes(): Promise<void> {
     const enabledRoutes = this.storage.getEnabled()
+
+    // Log every 100 polls (~5 seconds) to show we're running
+    this.pollCount++
+    if (this.pollCount % 100 === 0) {
+      console.log(`[RoutingEngine] Poll cycle ${this.pollCount}, ${enabledRoutes.length} enabled routes`)
+    }
 
     // Group routes by source to avoid polling same source multiple times
     const routesBySource = new Map<string, Route[]>()
@@ -220,6 +264,8 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
       if (response.messages.length === 0) return
 
+      console.log(`[RoutingEngine] Got ${response.messages.length} messages from ${serverUrl} port ${portId}`)
+
       // Forward each message to all destinations
       for (const message of response.messages) {
         for (const route of routes) {
@@ -227,12 +273,38 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
         }
       }
     } catch (err) {
-      // Update status for affected routes
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorKey = `${serverUrl}:${portId}`
+      const now = Date.now()
+
+      // If port not found or bad gateway, try to re-open it (rate-limited to once per 5 seconds)
+      if (errorMsg.includes('Port not found') || errorMsg.includes('Bad Gateway')) {
+        const retryKey = `retry:${errorKey}`
+        const lastRetry = this.lastErrorLog?.get(retryKey) ?? 0
+        if (now - lastRetry > 5000) {
+          const portState = this.openPorts.get(errorKey)
+          if (portState) {
+            const route = routes[0]
+            const portInfo = route.source.portId === portId ? route.source : route.destination
+            console.log(`[RoutingEngine] Retrying port open: ${portInfo.portName} (${portState.type}) on ${serverUrl}`)
+            await this.openPort(serverUrl, portId, portInfo.portName, portState.type)
+            if (!this.lastErrorLog) this.lastErrorLog = new Map()
+            this.lastErrorLog.set(retryKey, now)
+          }
+        }
+      }
+
+      // Update status for affected routes (log only once per minute to avoid spam)
+      if (!this.lastErrorLog || !this.lastErrorLog.has(errorKey) || now - this.lastErrorLog.get(errorKey)! > 60000) {
+        console.error(`[RoutingEngine] Poll error for ${serverUrl} port ${portId}:`, errorMsg)
+        if (!this.lastErrorLog) this.lastErrorLog = new Map()
+        this.lastErrorLog.set(errorKey, now)
+      }
       for (const route of routes) {
         const status = this.routeStatuses.get(route.id)
         if (status) {
           status.status = 'error'
-          status.error = err instanceof Error ? err.message : String(err)
+          status.error = errorMsg
           this.emit('route-status-changed', status)
         }
       }
@@ -243,6 +315,8 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     try {
       const client = getRemoteClient(route.destination.serverUrl)
       await client.sendMessage(route.destination.portId, message)
+
+      console.log(`[RoutingEngine] Forwarded message to ${route.destination.serverUrl} port ${route.destination.portId}: [${message.slice(0, 3).join(', ')}${message.length > 3 ? '...' : ''}]`)
 
       // Update status
       const status = this.routeStatuses.get(route.id)
@@ -256,10 +330,30 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
       this.emit('message-routed', route.id, message)
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      console.error(`[RoutingEngine] Forward failed to ${route.destination.serverUrl} port ${route.destination.portId}: ${errorMsg}`)
+
+      // If port not found or bad gateway, try to re-open it (rate-limited to once per 5 seconds)
+      if (errorMsg.includes('Port not found') || errorMsg.includes('Bad Gateway')) {
+        const destKey = `${route.destination.serverUrl}:${route.destination.portId}`
+        const retryKey = `retry:${destKey}`
+        const now = Date.now()
+        const lastRetry = this.lastErrorLog?.get(retryKey) ?? 0
+        if (now - lastRetry > 5000) {
+          const portState = this.openPorts.get(destKey)
+          if (portState) {
+            console.log(`[RoutingEngine] Retrying destination port open: ${route.destination.portName} on ${route.destination.serverUrl}`)
+            await this.openPort(route.destination.serverUrl, route.destination.portId, route.destination.portName, 'output')
+            if (!this.lastErrorLog) this.lastErrorLog = new Map()
+            this.lastErrorLog.set(retryKey, now)
+          }
+        }
+      }
+
       const status = this.routeStatuses.get(route.id)
       if (status) {
         status.status = 'error'
-        status.error = err instanceof Error ? err.message : String(err)
+        status.error = errorMsg
         this.emit('route-status-changed', status)
       }
     }

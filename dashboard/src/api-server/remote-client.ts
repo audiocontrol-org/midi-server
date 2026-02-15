@@ -32,6 +32,14 @@ interface RequestOptions {
   timeout?: number
 }
 
+/**
+ * Extract the numeric port index from a portId like "input-2" or "output-1"
+ */
+function extractPortIndex(portId: string): string {
+  const match = portId.match(/^(?:input|output)-(\d+)$/)
+  return match ? match[1] : portId
+}
+
 export class RemoteClient {
   private baseUrl: string
   private defaultTimeout: number
@@ -48,15 +56,22 @@ export class RemoteClient {
       const isHttps = url.protocol === 'https:'
       const httpModule = isHttps ? https : http
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      }
+
+      // Explicitly set Content-Length when there's a body
+      if (options.body) {
+        headers['Content-Length'] = String(Buffer.byteLength(options.body))
+      }
+
       const reqOptions: http.RequestOptions = {
         hostname: url.hostname,
         port: url.port || (isHttps ? 443 : 80),
         path: url.pathname + url.search,
         method: options.method ?? 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
+        headers,
         timeout: options.timeout ?? this.defaultTimeout
       }
 
@@ -124,24 +139,28 @@ export class RemoteClient {
   }
 
   async openPort(portId: string, name: string, type: 'input' | 'output'): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/midi/port/${portId}`, {
+    const index = extractPortIndex(portId)
+    return this.request<{ success: boolean }>(`/midi/port/${index}`, {
       method: 'POST',
       body: JSON.stringify({ name, type })
     })
   }
 
   async closePort(portId: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/midi/port/${portId}`, {
+    const index = extractPortIndex(portId)
+    return this.request<{ success: boolean }>(`/midi/port/${index}`, {
       method: 'DELETE'
     })
   }
 
   async getMessages(portId: string): Promise<RemoteMessagesResponse> {
-    return this.request<RemoteMessagesResponse>(`/midi/port/${portId}/messages`)
+    const index = extractPortIndex(portId)
+    return this.request<RemoteMessagesResponse>(`/midi/port/${index}/messages`)
   }
 
   async sendMessage(portId: string, message: number[]): Promise<RemoteSendResponse> {
-    return this.request<RemoteSendResponse>(`/midi/port/${portId}/send`, {
+    const index = extractPortIndex(portId)
+    return this.request<RemoteSendResponse>(`/midi/port/${index}/send`, {
       method: 'POST',
       body: JSON.stringify({ message })
     })
