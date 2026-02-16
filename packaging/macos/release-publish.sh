@@ -88,15 +88,21 @@ PKG_FILE="$PROJECT_ROOT/build/pkg/MidiServer-$VERSION.pkg"
 [ -f "$PKG_FILE" ] || die "Installer package not found: $PKG_FILE"
 
 manifest_count=$(find "$DIST_DIR" -maxdepth 1 -type f -name "latest-mac*.yml" | wc -l | tr -d ' ')
-zip_count=$(find "$DIST_DIR" -maxdepth 1 -type f -name "*.zip" | wc -l | tr -d ' ')
+zip_count=$(find "$DIST_DIR" -maxdepth 1 -type f -name "*-$VERSION*-mac.zip" | wc -l | tr -d ' ')
 
 [ "$manifest_count" -gt 0 ] || die "No latest-mac*.yml found in $DIST_DIR"
-[ "$zip_count" -gt 0 ] || die "No zip artifacts found in $DIST_DIR"
+[ "$zip_count" -gt 0 ] || die "No version-matched zip artifacts found in $DIST_DIR"
 
 ASSETS=()
 while IFS= read -r file; do
     ASSETS+=("$file")
-done < <(find "$DIST_DIR" -maxdepth 1 -type f \( -name "latest-mac*.yml" -o -name "*.zip" -o -name "*.blockmap" -o -name "*.dmg" \) | sort)
+done < <(find "$DIST_DIR" -maxdepth 1 -type f -name "latest-mac*.yml" | sort)
+while IFS= read -r file; do
+    ASSETS+=("$file")
+done < <(find "$DIST_DIR" -maxdepth 1 -type f \( -name "*-$VERSION*-mac.zip" -o -name "*-$VERSION*-mac.zip.blockmap" \) | sort)
+while IFS= read -r file; do
+    ASSETS+=("$file")
+done < <(find "$DIST_DIR" -maxdepth 1 -type f \( -name "*-$VERSION*.dmg" -o -name "*-$VERSION*.dmg.blockmap" \) | sort)
 ASSETS+=("$PKG_FILE")
 
 TAG="v$VERSION"
