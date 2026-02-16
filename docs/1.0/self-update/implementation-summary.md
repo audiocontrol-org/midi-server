@@ -32,6 +32,7 @@ Implemented the core self-update pipeline for production and development modes:
 - Kept dev mode explicitly opt-in with configurable local build path and clear channel status.
 - Implemented dev build path fallback to `MIDI_DEV_BUILD_PATH` when settings value is unset.
 - Added dev install relaunch fallback to current app when launching target dev executable fails.
+- Debounced and serialized dev watcher-triggered update checks to avoid duplicate/overlapping checks.
 
 ## Challenges and Solutions
 

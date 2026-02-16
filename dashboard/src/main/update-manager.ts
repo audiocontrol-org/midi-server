@@ -31,6 +31,9 @@ export class UpdateManager implements UpdateService {
   private checkTimer: NodeJS.Timeout | null = null
   private watcher: FSWatcher | null = null
   private pendingDevBuild: DevBuildMetadata | null = null
+  private devCheckDebounceTimer: NodeJS.Timeout | null = null
+  private devCheckInFlight = false
+  private devCheckQueued = false
 
   constructor(options: UpdateManagerOptions) {
     this.settingsPath = join(app.getPath('userData'), 'update-settings.json')
@@ -165,6 +168,11 @@ export class UpdateManager implements UpdateService {
       await this.watcher.close()
       this.watcher = null
     }
+
+    if (this.devCheckDebounceTimer) {
+      clearTimeout(this.devCheckDebounceTimer)
+      this.devCheckDebounceTimer = null
+    }
   }
 
   private configureAutoUpdater(): void {
@@ -290,6 +298,11 @@ export class UpdateManager implements UpdateService {
       this.watcher = null
     }
 
+    if (this.devCheckDebounceTimer) {
+      clearTimeout(this.devCheckDebounceTimer)
+      this.devCheckDebounceTimer = null
+    }
+
     const effectiveDevBuildPath = this.getEffectiveDevBuildPath()
     if (!this.settings.devMode || !effectiveDevBuildPath) {
       return
@@ -305,12 +318,12 @@ export class UpdateManager implements UpdateService {
 
     this.watcher.on('add', (path) => {
       if (path.endsWith('Info.plist')) {
-        void this.checkDevelopmentBuild()
+        this.scheduleDevBuildCheck()
       }
     })
     this.watcher.on('change', (path) => {
       if (path.endsWith('Info.plist')) {
-        void this.checkDevelopmentBuild()
+        this.scheduleDevBuildCheck()
       }
     })
     this.watcher.on('error', (error) => {
@@ -321,6 +334,35 @@ export class UpdateManager implements UpdateService {
         lastError: getErrorMessage(error)
       })
     })
+  }
+
+  private scheduleDevBuildCheck(delayMs = 400): void {
+    if (this.devCheckDebounceTimer) {
+      clearTimeout(this.devCheckDebounceTimer)
+    }
+
+    this.devCheckDebounceTimer = setTimeout(() => {
+      this.devCheckDebounceTimer = null
+      void this.runDevelopmentBuildCheckSerially()
+    }, delayMs)
+  }
+
+  private async runDevelopmentBuildCheckSerially(): Promise<void> {
+    if (this.devCheckInFlight) {
+      this.devCheckQueued = true
+      return
+    }
+
+    this.devCheckInFlight = true
+    try {
+      await this.checkDevelopmentBuild()
+    } finally {
+      this.devCheckInFlight = false
+      if (this.devCheckQueued) {
+        this.devCheckQueued = false
+        void this.runDevelopmentBuildCheckSerially()
+      }
+    }
   }
 
   private async checkDevelopmentBuild(): Promise<void> {
