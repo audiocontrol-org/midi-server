@@ -33,6 +33,7 @@ Implemented the core self-update pipeline for production and development modes:
 - Implemented dev build path fallback to `MIDI_DEV_BUILD_PATH` when settings value is unset.
 - Added dev install relaunch fallback to current app when launching target dev executable fails.
 - Debounced and serialized dev watcher-triggered update checks to avoid duplicate/overlapping checks.
+- Restricted dev watcher triggers to relevant `Info.plist` paths under configured build path.
 
 ## Challenges and Solutions
 

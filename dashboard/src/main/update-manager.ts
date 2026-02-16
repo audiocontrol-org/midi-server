@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { promises as fs } from 'fs'
 import { join } from 'path'
+import path from 'path'
 import type {
   UpdateEvent,
   UpdateService,
@@ -316,13 +317,13 @@ export class UpdateManager implements UpdateService {
       }
     })
 
-    this.watcher.on('add', (path) => {
-      if (path.endsWith('Info.plist')) {
+    this.watcher.on('add', (changedPath) => {
+      if (isRelevantDevPlistPath(changedPath, effectiveDevBuildPath)) {
         this.scheduleDevBuildCheck()
       }
     })
-    this.watcher.on('change', (path) => {
-      if (path.endsWith('Info.plist')) {
+    this.watcher.on('change', (changedPath) => {
+      if (isRelevantDevPlistPath(changedPath, effectiveDevBuildPath)) {
         this.scheduleDevBuildCheck()
       }
     })
@@ -561,4 +562,30 @@ function getErrorMessage(error: unknown): string {
     return error.message
   }
   return String(error)
+}
+
+function isRelevantDevPlistPath(changedPath: string, devBuildPath: string): boolean {
+  if (!changedPath.endsWith('Info.plist')) {
+    return false
+  }
+
+  const normalizedChanged = normalizePath(changedPath)
+  const normalizedBase = normalizePath(devBuildPath)
+
+  const expectedPlistCandidates = [
+    `${normalizedBase}/MidiServer.app/Contents/Info.plist`,
+    `${normalizedBase}/Contents/Info.plist`,
+    normalizedBase
+  ]
+
+  if (expectedPlistCandidates.includes(normalizedChanged)) {
+    return true
+  }
+
+  return normalizedChanged.startsWith(`${normalizedBase}/`) &&
+    normalizedChanged.endsWith('/Contents/Info.plist')
+}
+
+function normalizePath(value: string): string {
+  return path.resolve(value).replace(/\\/g, '/')
 }
