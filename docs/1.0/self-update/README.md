@@ -17,6 +17,7 @@ Create a self-updating launcher that, once installed, can automatically detect, 
 | [workplan.md](./workplan.md) | Implementation phases with issue links |
 | [implementation-summary.md](./implementation-summary.md) | Post-completion report |
 | [manual-test-checklist.md](./manual-test-checklist.md) | End-to-end validation steps |
+| [release-runbook.md](./release-runbook.md) | Scripted release process (discrete + one-click) |
 
 ## Progress
 
