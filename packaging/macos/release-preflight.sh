@@ -89,12 +89,12 @@ if [ ! -f "$DASHBOARD_DIR/$ENTITLEMENTS_RELATIVE_PATH" ]; then
     exit 1
 fi
 
-if ! rg -q 'release-build\.sh --version' "$RELEASE_WORKFLOW"; then
+if ! grep -Eq 'release-build\.sh --version' "$RELEASE_WORKFLOW"; then
     echo "release workflow must invoke release-build.sh with an explicit --version argument." >&2
     exit 1
 fi
 
-if ! rg -q 'Publish GitHub release assets' "$RELEASE_WORKFLOW"; then
+if ! grep -Eq 'Publish GitHub release assets' "$RELEASE_WORKFLOW"; then
     echo "release workflow is missing the dedicated GitHub release publish step." >&2
     exit 1
 fi
