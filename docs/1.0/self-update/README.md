@@ -1,6 +1,6 @@
 # Feature: Self-Updating Shell
 
-**Status:** In Progress
+**Status:** In Progress (Dev Flow Validated)
 **Milestone:** [Week of Feb 17-21](https://github.com/audiocontrol-org/midi-server/milestone/2)
 **Branch:** `feature/self-update`
 **Parent Issue:** [#15](https://github.com/audiocontrol-org/midi-server/issues/15)
@@ -28,7 +28,7 @@ Create a self-updating launcher that, once installed, can automatically detect, 
 - [x] API endpoints added
 - [x] UI components created
 - [x] Build scripts updated
-- [ ] Documentation complete
+- [x] Documentation complete
 
 ## GitHub Issues
 
@@ -67,8 +67,8 @@ Create a self-updating launcher that, once installed, can automatically detect, 
 For developers testing updates locally:
 
 1. Install shell app once (via .pkg or drag to Applications)
-2. Open app > Settings > Enable Dev Mode
-3. Set "Dev Build Path" to `~/work/midi-server-work/midi-server/dashboard/dist`
-4. Build app locally: `cd dashboard && npm run build:mac`
+2. Open app > Updates > Enable Dev Mode
+3. Set "Dev Build Path" to `~/work/midi-server-work/midi-server-self-update/dashboard/dist/mac-arm64`
+4. Build app locally: `cd dashboard && npm pkg set version=0.1.4 && npm run build && npx electron-builder --mac dir --arm64`
 5. Shell detects new build > "Update Available" notification
 6. Click "Apply" > App restarts with new code

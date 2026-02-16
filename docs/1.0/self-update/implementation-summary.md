@@ -1,7 +1,7 @@
 # Implementation Summary: Self-Updating Shell
 
-**Status:** In Progress
-**Completed:** 2026-02-16 (partial)
+**Status:** In Progress (Dev Mode Complete; Production Validation Pending)
+**Completed:** 2026-02-16 (development flow)
 **Author:** Codex + Orion
 
 ## Overview
@@ -12,6 +12,7 @@ Implemented the core self-update pipeline for production and development modes:
 - Development mode local build watcher via `chokidar`
 - Update API endpoints + SSE stream
 - Dashboard update UI (notification, progress, settings)
+- Dashboard update modal launch button with availability indicator
 - macOS release workflow and artifact checks (`dmg`, `zip`, `latest-mac.yml`)
 
 ## What Was Built
@@ -23,6 +24,7 @@ Implemented the core self-update pipeline for production and development modes:
 | UpdateManager | Added update state machine, persisted settings, production checks/download/install, dev build detection and relaunch |
 | Update API endpoints | Added `/api/update/status`, `/check`, `/download`, `/install`, `/settings`, `/stream` |
 | Update UI components | Added `useUpdateStatus`, `UpdateNotification`, `UpdateProgress`, `UpdateSettings`, and dashboard integration |
+| Update UX behavior | Added `Updates` floating button + modal flow, with indicator when update is available/downloaded |
 | Build script changes | Updated macOS installer/build flow to verify updater artifacts and added release workflow |
 
 ## Technical Decisions
@@ -46,7 +48,7 @@ Implemented the core self-update pipeline for production and development modes:
 
 ### Manual Testing
 - [ ] Production update flow tested
-- [ ] Dev mode update flow tested
+- [x] Dev mode update flow tested
 - [x] Settings persistence verified (API-level)
 - [x] Error handling verified (service-not-configured API path)
 
@@ -54,7 +56,7 @@ Implemented the core self-update pipeline for production and development modes:
 - [ ] App detects new version on GitHub
 - [ ] Download progress shows correctly
 - [ ] Update applies and app restarts
-- [ ] Dev mode watcher detects local builds
+- [x] Dev mode watcher detects local builds
 - [x] Settings persist across restarts
 - [x] Update API endpoints validated via automated test
 - [x] Update SSE stream validated via automated test
