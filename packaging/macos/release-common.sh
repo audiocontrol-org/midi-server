@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DASHBOARD_DIR="$PROJECT_ROOT/dashboard"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
+RELEASE_CONFIG_FILE="$SCRIPT_DIR/release.config.sh"
 
 die() {
     echo "Error: $*" >&2
@@ -60,3 +61,26 @@ ensure_tag_absent() {
         die "Tag already exists locally: $tag"
     fi
 }
+
+load_release_config() {
+    if [ -f "$RELEASE_CONFIG_FILE" ]; then
+        # shellcheck disable=SC1090
+        source "$RELEASE_CONFIG_FILE"
+    fi
+
+    : "${DEVELOPER_ID_APP:=${DEVELOPER_ID_APP_DEFAULT:-}}"
+    : "${DEVELOPER_ID_INSTALLER:=${DEVELOPER_ID_INSTALLER_DEFAULT:-}}"
+    : "${CSC_NAME:=${CSC_NAME_DEFAULT:-}}"
+    : "${CSC_IDENTITY_AUTO_DISCOVERY:=${CSC_IDENTITY_AUTO_DISCOVERY_DEFAULT:-}}"
+    : "${APPLE_TEAM_ID:=${APPLE_TEAM_ID_DEFAULT:-}}"
+    : "${RELEASE_GH_REPO:=${RELEASE_GH_REPO_DEFAULT:-${RELEASE_GH_REPO:-}}}"
+
+    export DEVELOPER_ID_APP
+    export DEVELOPER_ID_INSTALLER
+    export CSC_NAME
+    export CSC_IDENTITY_AUTO_DISCOVERY
+    export APPLE_TEAM_ID
+    export RELEASE_GH_REPO
+}
+
+load_release_config

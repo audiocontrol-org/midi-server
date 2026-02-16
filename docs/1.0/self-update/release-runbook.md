@@ -15,20 +15,24 @@ This runbook is fully scripted and supports:
   - `Developer ID Application: <Name> (<TEAM_ID>)`
   - `Developer ID Installer: <Name> (<TEAM_ID>)`
 
-## Required Environment Variables
+## Committed Release Config
 
-```bash
-export DEVELOPER_ID_APP="Developer ID Application: Orion Letizi (ES3R29MZ5A)"
-export DEVELOPER_ID_INSTALLER="Developer ID Installer: Orion Letizi (ES3R29MZ5A)"
-export CSC_IDENTITY_AUTO_DISCOVERY=false
-export CSC_NAME="Orion Letizi (ES3R29MZ5A)"
-```
+Non-secret release defaults are committed in:
 
-Optional notarization:
+- `packaging/macos/release.config.sh`
+
+This includes certificate names and repo metadata:
+
+- `DEVELOPER_ID_APP_DEFAULT`
+- `DEVELOPER_ID_INSTALLER_DEFAULT`
+- `CSC_NAME_DEFAULT`
+- `APPLE_TEAM_ID_DEFAULT`
+- `RELEASE_GH_REPO`
+
+## Environment Variables (Secrets Only)
 
 ```bash
 export APPLE_ID="<apple-id-email>"
-export APPLE_TEAM_ID="ES3R29MZ5A"
 export APPLE_APP_SPECIFIC_PASSWORD="<app-specific-password>"
 ```
 

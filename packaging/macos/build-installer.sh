@@ -19,6 +19,12 @@ DASHBOARD_DIR="$PROJECT_ROOT/dashboard"
 PKG_DIR="$PROJECT_ROOT/build/pkg"
 STAGING_DIR="$PKG_DIR/staging"
 RESOURCES_DIR="$SCRIPT_DIR/resources"
+RELEASE_CONFIG_FILE="$SCRIPT_DIR/release.config.sh"
+
+if [ -f "$RELEASE_CONFIG_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$RELEASE_CONFIG_FILE"
+fi
 
 # Signing identities (set via environment or arguments)
 DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
@@ -28,6 +34,28 @@ DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 APPLE_ID="${APPLE_ID:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
+CSC_NAME="${CSC_NAME:-}"
+CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-}"
+
+if [ -z "$DEVELOPER_ID_APP" ] && [ -n "${DEVELOPER_ID_APP_DEFAULT:-}" ]; then
+    DEVELOPER_ID_APP="$DEVELOPER_ID_APP_DEFAULT"
+fi
+if [ -z "$DEVELOPER_ID_INSTALLER" ] && [ -n "${DEVELOPER_ID_INSTALLER_DEFAULT:-}" ]; then
+    DEVELOPER_ID_INSTALLER="$DEVELOPER_ID_INSTALLER_DEFAULT"
+fi
+if [ -z "$CSC_NAME" ] && [ -n "${CSC_NAME_DEFAULT:-}" ]; then
+    CSC_NAME="$CSC_NAME_DEFAULT"
+fi
+if [ -z "$CSC_IDENTITY_AUTO_DISCOVERY" ] && [ -n "${CSC_IDENTITY_AUTO_DISCOVERY_DEFAULT:-}" ]; then
+    CSC_IDENTITY_AUTO_DISCOVERY="$CSC_IDENTITY_AUTO_DISCOVERY_DEFAULT"
+fi
+if [ -z "$APPLE_TEAM_ID" ] && [ -n "${APPLE_TEAM_ID_DEFAULT:-}" ]; then
+    APPLE_TEAM_ID="$APPLE_TEAM_ID_DEFAULT"
+fi
+
+export CSC_NAME
+export CSC_IDENTITY_AUTO_DISCOVERY
+export APPLE_TEAM_ID
 
 # Flags
 SKIP_BUILD=false
@@ -51,9 +79,13 @@ Options:
 Environment variables:
     DEVELOPER_ID_APP              Developer ID Application identity
     DEVELOPER_ID_INSTALLER        Developer ID Installer identity
+    CSC_NAME                      electron-builder signing identity (short name)
+    CSC_IDENTITY_AUTO_DISCOVERY   Set to false to force CSC_NAME usage
     APPLE_ID                      Apple ID for notarization
     APPLE_TEAM_ID                 Team ID for notarization
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
+    
+Defaults are loaded from packaging/macos/release.config.sh when present.
 EOF
     exit 1
 }

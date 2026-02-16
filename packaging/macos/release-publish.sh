@@ -101,6 +101,9 @@ ASSETS+=("$PKG_FILE")
 
 TAG="v$VERSION"
 CMD=(gh release create "$TAG")
+if [ -n "${RELEASE_GH_REPO:-}" ]; then
+    CMD+=(-R "$RELEASE_GH_REPO")
+fi
 CMD+=("${ASSETS[@]}")
 CMD+=(--title "$TAG")
 
