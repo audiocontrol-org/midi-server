@@ -1,6 +1,6 @@
 {
   "name": "dashboard",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "MIDI Server Dashboard - Electron and Web",
   "main": "./out/main/index.js",
   "author": "audiocontrol.org",
