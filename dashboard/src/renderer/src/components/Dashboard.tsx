@@ -6,9 +6,8 @@ import { ServerControl } from '@/components/ServerControl'
 import { RemoteServerControl } from '@/components/RemoteServerControl'
 import { PortList, generatePortId } from '@/components/PortList'
 import { PortDetail } from '@/components/PortDetail'
-import { UpdateNotification } from '@/components/UpdateNotification'
-import { UpdateProgress } from '@/components/UpdateProgress'
-import { UpdateSettings } from '@/components/UpdateSettings'
+import { UpdateSettingsButton } from '@/components/UpdateSettingsButton'
+import { UpdateSettingsModal } from '@/components/UpdateSettingsModal'
 import { BuildInfoButton } from '@/components/BuildInfoButton'
 import { BuildInfoModal } from '@/components/BuildInfoModal'
 import { ServerTabs } from '@/components/ServerTabs'
@@ -34,6 +33,7 @@ export function Dashboard(): React.JSX.Element {
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
 
   // Open ports state
   const [openPorts, setOpenPorts] = useState<Map<string, OpenPort>>(new Map())
@@ -354,6 +354,8 @@ export function Dashboard(): React.JSX.Element {
   const openPortIds = new Set(openPorts.keys())
   const isViewingLocalServer = selectedServerUrl === localServerUrl
   const displayPorts = isViewingLocalServer ? ports : remotePorts
+  const hasUpdateAvailable =
+    update.status?.phase === 'available' || update.status?.phase === 'downloaded'
 
   return (
     <div className="min-h-screen p-6">
@@ -367,6 +369,24 @@ export function Dashboard(): React.JSX.Element {
           />
         </>
       )}
+      {!update.loading && update.supported && update.status && update.settings && (
+        <>
+          <UpdateSettingsButton
+            onClick={() => setIsUpdateModalOpen(true)}
+            hasUpdateAvailable={hasUpdateAvailable}
+          />
+          <UpdateSettingsModal
+            isOpen={isUpdateModalOpen}
+            onClose={() => setIsUpdateModalOpen(false)}
+            status={update.status}
+            settings={update.settings}
+            onCheck={update.checkNow}
+            onDownload={update.downloadNow}
+            onInstall={update.installNow}
+            onSave={update.saveSettings}
+          />
+        </>
+      )}
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white">MIDI Server Dashboard</h1>
@@ -377,23 +397,6 @@ export function Dashboard(): React.JSX.Element {
           </p>
           <p className="text-xs text-gray-600 mt-1">Running in {platform.name} mode</p>
         </header>
-
-        {!update.loading && update.supported && update.status && update.settings && (
-          <div className="space-y-3">
-            <UpdateNotification
-              status={update.status}
-              onCheck={() => void update.checkNow()}
-              onDownload={() => void update.downloadNow()}
-              onInstall={() => void update.installNow()}
-            />
-            <UpdateProgress status={update.status} />
-            <UpdateSettings
-              settings={update.settings}
-              onSave={update.saveSettings}
-              onCheck={update.checkNow}
-            />
-          </div>
-        )}
 
         {/* Server Tabs */}
         {discoveredServers.length > 0 && (
