@@ -1,0 +1,41 @@
+name: Release Preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-macos.yml'
+      - 'packaging/macos/**'
+      - 'dashboard/package.json'
+      - 'dashboard/electron-builder.yml'
+      - 'VERSION'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-macos.yml'
+      - 'packaging/macos/**'
+      - 'dashboard/package.json'
+      - 'dashboard/electron-builder.yml'
+      - 'VERSION'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Run release preflight checks
+        run: ./packaging/macos/release-preflight.sh

@@ -5,6 +5,7 @@ This runbook is fully scripted and supports:
 - discrete steps (`prepare`, `build`, `publish`)
 - one-click release cut (`release-cut`)
 - installer-only builds (`build-installer`)
+- fast preflight validation (`release-preflight`)
 
 ## Prerequisites
 
@@ -62,6 +63,11 @@ export APPLE_TEAM_ID="ES3R29MZ5A"
 ```
 
 ## Discrete Commands
+
+0. Fast preflight check (recommended before tagging):
+```bash
+./packaging/macos/release-preflight.sh
+```
 
 1. Prepare version/commit/tag:
 ```bash
@@ -122,3 +128,8 @@ Optional overrides (otherwise defaults from `release.config.sh` are used):
 - `DEVELOPER_ID_APP`
 - `DEVELOPER_ID_INSTALLER`
 - `CSC_NAME`
+
+## CI Guardrails
+
+- `.github/workflows/release-preflight.yml` runs fast checks on PRs/pushes that touch release files.
+- `.github/workflows/release-macos.yml` runs a fail-fast preflight step before certificate import and notarized build steps.
