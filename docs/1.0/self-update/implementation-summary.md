@@ -58,6 +58,7 @@ Implemented the core self-update pipeline for production and development modes:
 - [x] Settings persist across restarts
 - [x] Update API endpoints validated via automated test
 - [x] Update SSE stream validated via automated test
+- [x] Unconfigured update endpoints correctly return 501 responses
 
 ## Files Changed
 

@@ -226,6 +226,10 @@ async function testUpdateEndpointsUnconfigured(): Promise<void> {
     const response = await getJson<{ error: string }>(`http://localhost:${port}/api/update/status`)
     assert.equal(response.status, 501)
     assert.match(response.body.error, /not available/i)
+
+    const streamResponse = await getJson<{ error: string }>(`http://localhost:${port}/api/update/stream`)
+    assert.equal(streamResponse.status, 501)
+    assert.match(streamResponse.body.error, /not available/i)
   } finally {
     await server.stop()
     restoreConfigDir()
