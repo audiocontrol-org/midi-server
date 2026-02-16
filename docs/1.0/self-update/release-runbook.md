@@ -103,3 +103,22 @@ If you only need a `.pkg` installer and no release publication:
   - `*.dmg` (if generated)
 - Installer in `build/pkg/`
   - `MidiServer-<version>.pkg`
+
+## CI Release Secrets
+
+The GitHub Actions workflow `.github/workflows/release-macos.yml` requires:
+
+- `MACOS_KEYCHAIN_PASSWORD`
+- `MACOS_APP_CERT_P12_BASE64`
+- `MACOS_APP_CERT_P12_PASSWORD`
+- `MACOS_INSTALLER_CERT_P12_BASE64`
+- `MACOS_INSTALLER_CERT_P12_PASSWORD`
+- `APPLE_ID`
+- `APPLE_TEAM_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+
+Optional overrides (otherwise defaults from `release.config.sh` are used):
+
+- `DEVELOPER_ID_APP`
+- `DEVELOPER_ID_INSTALLER`
+- `CSC_NAME`
