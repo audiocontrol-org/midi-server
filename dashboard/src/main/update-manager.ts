@@ -4,6 +4,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import path from 'path'
+import os from 'os'
 import type {
   UpdateEvent,
   UpdateService,
@@ -424,7 +425,11 @@ export class UpdateManager implements UpdateService {
   }
 
   private getEffectiveDevBuildPath(): string | null {
-    return this.settings.devBuildPath || process.env.MIDI_DEV_BUILD_PATH || null
+    const rawPath = this.settings.devBuildPath || process.env.MIDI_DEV_BUILD_PATH || null
+    if (!rawPath) {
+      return null
+    }
+    return expandHomePath(rawPath)
   }
 
   private async readDevBuildMetadata(basePath: string): Promise<DevBuildMetadata | null> {
@@ -588,4 +593,14 @@ function isRelevantDevPlistPath(changedPath: string, devBuildPath: string): bool
 
 function normalizePath(value: string): string {
   return path.resolve(value).replace(/\\/g, '/')
+}
+
+function expandHomePath(value: string): string {
+  if (value === '~') {
+    return os.homedir()
+  }
+  if (value.startsWith('~/')) {
+    return path.join(os.homedir(), value.slice(2))
+  }
+  return value
 }

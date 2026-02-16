@@ -10,17 +10,21 @@ interface UpdateSettingsProps {
 export function UpdateSettings(props: UpdateSettingsProps): React.JSX.Element {
   const { settings, onSave, onCheck } = props
   const [draft, setDraft] = useState(settings)
+  const [isDirty, setIsDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [checking, setChecking] = useState(false)
 
   useEffect(() => {
-    setDraft(settings)
-  }, [settings])
+    if (!isDirty) {
+      setDraft(settings)
+    }
+  }, [settings, isDirty])
 
   const handleSave = async (): Promise<void> => {
     setSaving(true)
     try {
       await onSave(draft)
+      setIsDirty(false)
     } finally {
       setSaving(false)
     }
@@ -53,7 +57,10 @@ export function UpdateSettings(props: UpdateSettingsProps): React.JSX.Element {
         <input
           type="checkbox"
           checked={draft.autoCheck}
-          onChange={(event) => setDraft((prev) => ({ ...prev, autoCheck: event.target.checked }))}
+          onChange={(event) => {
+            setIsDirty(true)
+            setDraft((prev) => ({ ...prev, autoCheck: event.target.checked }))
+          }}
         />
         Check for updates on startup
       </label>
@@ -62,9 +69,10 @@ export function UpdateSettings(props: UpdateSettingsProps): React.JSX.Element {
         <input
           type="checkbox"
           checked={draft.autoDownload}
-          onChange={(event) =>
+          onChange={(event) => {
+            setIsDirty(true)
             setDraft((prev) => ({ ...prev, autoDownload: event.target.checked }))
-          }
+          }}
         />
         Automatically download updates
       </label>
@@ -73,9 +81,10 @@ export function UpdateSettings(props: UpdateSettingsProps): React.JSX.Element {
         <input
           type="checkbox"
           checked={draft.autoInstallOnQuit}
-          onChange={(event) =>
+          onChange={(event) => {
+            setIsDirty(true)
             setDraft((prev) => ({ ...prev, autoInstallOnQuit: event.target.checked }))
-          }
+          }}
         />
         Automatically install updates on quit
       </label>
@@ -86,12 +95,13 @@ export function UpdateSettings(props: UpdateSettingsProps): React.JSX.Element {
           type="number"
           min={1}
           value={draft.checkIntervalMinutes}
-          onChange={(event) =>
+          onChange={(event) => {
+            setIsDirty(true)
             setDraft((prev) => ({
               ...prev,
               checkIntervalMinutes: Number.parseInt(event.target.value, 10) || 1
             }))
-          }
+          }}
           className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white"
         />
       </div>
@@ -99,24 +109,28 @@ export function UpdateSettings(props: UpdateSettingsProps): React.JSX.Element {
       <div className="border-t border-gray-700 pt-4 space-y-3">
         <label className="flex items-center gap-3 text-sm text-yellow-300">
           <input
-            type="checkbox"
-            checked={draft.devMode}
-            onChange={(event) => setDraft((prev) => ({ ...prev, devMode: event.target.checked }))}
-          />
-          Enable development mode (local build watcher)
-        </label>
+          type="checkbox"
+          checked={draft.devMode}
+          onChange={(event) => {
+            setIsDirty(true)
+            setDraft((prev) => ({ ...prev, devMode: event.target.checked }))
+          }}
+        />
+        Enable development mode (local build watcher)
+      </label>
 
         <div className="grid gap-2">
           <label className="text-sm text-gray-400">Development build path</label>
           <input
-            type="text"
-            value={draft.devBuildPath ?? ''}
-            onChange={(event) =>
-              setDraft((prev) => ({ ...prev, devBuildPath: event.target.value || null }))
-            }
-            placeholder="~/work/midi-server-work/midi-server/dashboard/dist"
-            className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-          />
+          type="text"
+          value={draft.devBuildPath ?? ''}
+          onChange={(event) => {
+            setIsDirty(true)
+            setDraft((prev) => ({ ...prev, devBuildPath: event.target.value || null }))
+          }}
+          placeholder="~/work/midi-server-work/midi-server/dashboard/dist"
+          className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+        />
         </div>
       </div>
 
