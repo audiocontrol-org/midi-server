@@ -1,4 +1,11 @@
-import type { PlatformServices, ServerProcess, LogEntry, LogSeverity, BuildInfo } from './types'
+import type {
+  PlatformServices,
+  ServerProcess,
+  LogEntry,
+  LogSeverity,
+  BuildInfo
+} from './types'
+import type { UpdateSettings, UpdateStatus } from '@shared/types/update'
 
 /**
  * HTTP-based platform implementation.
@@ -12,6 +19,8 @@ export class HttpPlatform implements PlatformServices {
 
   private eventSource: EventSource | null = null
   private logListeners: Set<(entry: LogEntry) => void> = new Set()
+  private updateEventSource: EventSource | null = null
+  private updateListeners: Set<(status: UpdateStatus) => void> = new Set()
 
   constructor(name: 'electron' | 'web', apiBaseUrl: string) {
     this.name = name
@@ -94,6 +103,50 @@ export class HttpPlatform implements PlatformServices {
     }
   }
 
+  async getUpdateStatus(): Promise<UpdateStatus> {
+    return this.request<UpdateStatus>('/api/update/status')
+  }
+
+  async checkForUpdates(): Promise<UpdateStatus> {
+    return this.request<UpdateStatus>('/api/update/check', { method: 'POST' })
+  }
+
+  async downloadUpdate(): Promise<UpdateStatus> {
+    return this.request<UpdateStatus>('/api/update/download', { method: 'POST' })
+  }
+
+  async installUpdate(): Promise<void> {
+    await this.request('/api/update/install', { method: 'POST' })
+  }
+
+  async getUpdateSettings(): Promise<UpdateSettings> {
+    return this.request<UpdateSettings>('/api/update/settings')
+  }
+
+  async setUpdateSettings(settings: Partial<UpdateSettings>): Promise<UpdateSettings> {
+    return this.request<UpdateSettings>('/api/update/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    })
+  }
+
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void {
+    this.updateListeners.add(callback)
+
+    if (!this.updateEventSource) {
+      this.connectUpdateStream()
+    }
+
+    return () => {
+      this.updateListeners.delete(callback)
+
+      if (this.updateListeners.size === 0 && this.updateEventSource) {
+        this.updateEventSource.close()
+        this.updateEventSource = null
+      }
+    }
+  }
+
   addLog(message: string, severity: LogSeverity): void {
     // Fire and forget - send log to API server
     this.request('/api/logs', {
@@ -130,6 +183,35 @@ export class HttpPlatform implements PlatformServices {
 
       if (this.logListeners.size > 0) {
         setTimeout(() => this.connectLogStream(), 2000)
+      }
+    }
+  }
+
+  private connectUpdateStream(): void {
+    const url = `${this.apiBaseUrl}/api/update/stream`
+    this.updateEventSource = new EventSource(url)
+
+    this.updateEventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'status' && data.status) {
+          for (const listener of this.updateListeners) {
+            listener(data.status)
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    this.updateEventSource.onerror = () => {
+      if (this.updateEventSource) {
+        this.updateEventSource.close()
+        this.updateEventSource = null
+      }
+
+      if (this.updateListeners.size > 0) {
+        setTimeout(() => this.connectUpdateStream(), 2000)
       }
     }
   }

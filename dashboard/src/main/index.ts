@@ -4,12 +4,14 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { createApiServer, ApiServer } from '../api-server'
 import type { BuildInfo } from '../api-server/types'
+import { UpdateManager } from './update-manager'
 
 // Build info injected at build time by electron-vite
 declare const __BUILD_INFO__: BuildInfo
 
 let mainWindow: BrowserWindow | null = null
 let apiServer: ApiServer | null = null
+let updateManager: UpdateManager | null = null
 
 const API_PORT = 3001
 const MIDI_PORT = 0 // Let OS assign an available port
@@ -72,6 +74,11 @@ app.whenReady().then(async () => {
   // Start the API server in production mode
   // (In dev mode, Vite middleware handles API routes)
   if (!is.dev) {
+    updateManager = new UpdateManager({
+      currentVersion: app.getVersion()
+    })
+    await updateManager.initialize()
+
     const binaryPath = getBundledBinaryPath()
     console.log(`Starting API server with binary: ${binaryPath}`)
 
@@ -79,6 +86,7 @@ app.whenReady().then(async () => {
       apiPort: API_PORT,
       midiServerPort: MIDI_PORT,
       midiServerBinaryPath: binaryPath,
+      updateService: updateManager,
       buildInfo: __BUILD_INFO__
     })
 
@@ -104,6 +112,10 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', async () => {
+  if (updateManager) {
+    await updateManager.shutdown()
+  }
+
   if (apiServer) {
     console.log('Stopping API server...')
     await apiServer.stop()

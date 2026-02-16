@@ -1,3 +1,5 @@
+import type { UpdateSettings, UpdateStatus } from '@shared/types/update'
+
 export type LogSeverity = 'debug' | 'info' | 'warning' | 'error'
 
 export interface LogEntry {
@@ -61,6 +63,27 @@ export interface PlatformServices {
 
   /** Subscribe to new log entries (returns unsubscribe function) */
   onLogEntry(callback: (entry: LogEntry) => void): () => void
+
+  /** Get current update state */
+  getUpdateStatus(): Promise<UpdateStatus>
+
+  /** Trigger update check */
+  checkForUpdates(): Promise<UpdateStatus>
+
+  /** Download the currently available update */
+  downloadUpdate(): Promise<UpdateStatus>
+
+  /** Install downloaded update */
+  installUpdate(): Promise<void>
+
+  /** Get update settings */
+  getUpdateSettings(): Promise<UpdateSettings>
+
+  /** Update settings */
+  setUpdateSettings(settings: Partial<UpdateSettings>): Promise<UpdateSettings>
+
+  /** Subscribe to update status stream (returns unsubscribe function) */
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void
 
   /** Add a log entry from the dashboard */
   addLog(message: string, severity: LogSeverity): void

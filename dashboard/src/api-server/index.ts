@@ -16,7 +16,8 @@ export function createApiServer(config: Partial<ApiServerConfig> & { buildInfo: 
   const fullConfig: ApiServerConfig = {
     apiPort: config.apiPort ?? DEFAULT_API_PORT,
     midiServerPort: config.midiServerPort ?? DEFAULT_MIDI_PORT,
-    midiServerBinaryPath: config.midiServerBinaryPath ?? ''
+    midiServerBinaryPath: config.midiServerBinaryPath ?? '',
+    updateService: config.updateService
   }
 
   return new ApiServer(fullConfig, config.buildInfo)

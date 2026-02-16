@@ -1,4 +1,5 @@
 import type { LogEntry, LogSeverity, BuildInfo } from '@shared/types/log-entry'
+import type { UpdateService } from '@shared/types/update'
 
 export interface ServerStatus {
   running: boolean
@@ -11,6 +12,7 @@ export interface ApiServerConfig {
   apiPort: number
   midiServerPort: number
   midiServerBinaryPath: string
+  updateService?: UpdateService
   /** Directory to serve static files from (for web UI). If not set, no static files are served. */
   staticDir?: string
 }
