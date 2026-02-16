@@ -244,11 +244,22 @@ echo ""
 echo "=== Step 5: Creating installer package ==="
 
 COMPONENT_PKG="$PKG_DIR/$APP_NAME-component.pkg"
+COMPONENT_PLIST="$PKG_DIR/component.plist"
+
+# Prevent PackageKit from relocating the app to previously moved/staging paths.
+pkgbuild \
+    --analyze \
+    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+    "$COMPONENT_PLIST"
+
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST" >/dev/null
+
 pkgbuild \
     --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
     --identifier "$BUNDLE_ID" \
     --version "$VERSION" \
     --install-location "$APP_INSTALL_LOCATION" \
+    --component-plist "$COMPONENT_PLIST" \
     --scripts "$SCRIPT_DIR/scripts" \
     "$COMPONENT_PKG"
 echo "Created: $COMPONENT_PKG"
