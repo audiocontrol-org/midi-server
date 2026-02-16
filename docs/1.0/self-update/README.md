@@ -1,6 +1,6 @@
 # Feature: Self-Updating Shell
 
-**Status:** Planning
+**Status:** In Progress
 **Milestone:** [Week of Feb 17-21](https://github.com/audiocontrol-org/midi-server/milestone/2)
 **Branch:** `feature/self-update`
 **Parent Issue:** [#15](https://github.com/audiocontrol-org/midi-server/issues/15)
@@ -16,17 +16,18 @@ Create a self-updating launcher that, once installed, can automatically detect, 
 | [prd.md](./prd.md) | Product requirements |
 | [workplan.md](./workplan.md) | Implementation phases with issue links |
 | [implementation-summary.md](./implementation-summary.md) | Post-completion report |
+| [manual-test-checklist.md](./manual-test-checklist.md) | End-to-end validation steps |
 
 ## Progress
 
 - [x] Feature documentation created
 - [x] GitHub milestone created
 - [x] GitHub issues created
-- [ ] Dependencies added (electron-updater, chokidar)
-- [ ] UpdateManager implemented
-- [ ] API endpoints added
-- [ ] UI components created
-- [ ] Build scripts updated
+- [x] Dependencies added (electron-updater, chokidar)
+- [x] UpdateManager implemented
+- [x] API endpoints added
+- [x] UI components created
+- [x] Build scripts updated
 - [ ] Documentation complete
 
 ## GitHub Issues

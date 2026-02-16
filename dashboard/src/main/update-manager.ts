@@ -30,6 +30,7 @@ export class UpdateManager implements UpdateService {
   private settingsPath: string
   private checkTimer: NodeJS.Timeout | null = null
   private watcher: FSWatcher | null = null
+  private pendingDevBuild: DevBuildMetadata | null = null
 
   constructor(options: UpdateManagerOptions) {
     this.settingsPath = join(app.getPath('userData'), 'update-settings.json')
@@ -88,15 +89,16 @@ export class UpdateManager implements UpdateService {
 
   async downloadUpdate(): Promise<UpdateStatus> {
     if (this.settings.devMode) {
-      if (this.status.phase !== 'available') {
+      if (this.status.phase !== 'available' || !this.pendingDevBuild) {
         throw new Error('No development update available to apply')
       }
 
       this.updateStatus({
         phase: 'downloaded',
+        availableVersion: this.pendingDevBuild.version,
         downloaded: true,
         downloadProgress: 100,
-        message: 'Development build ready to apply'
+        message: `Development build ${this.pendingDevBuild.version} ready to apply`
       })
       return this.getStatus()
     }
@@ -110,8 +112,17 @@ export class UpdateManager implements UpdateService {
       if (!this.status.downloaded) {
         throw new Error('No downloaded development build to install')
       }
+
+      if (!this.pendingDevBuild?.executablePath) {
+        throw new Error('No local development build executable is available to launch')
+      }
+
       this.updateStatus({ phase: 'installing', message: 'Restarting to apply development build' })
-      app.relaunch()
+
+      app.relaunch({
+        execPath: this.pendingDevBuild.executablePath,
+        args: process.argv.slice(1)
+      })
       app.exit(0)
       return
     }
@@ -318,8 +329,9 @@ export class UpdateManager implements UpdateService {
       lastError: null
     })
 
-    const version = await this.readDevBundleVersion(this.settings.devBuildPath)
-    if (!version) {
+    const devBuild = await this.readDevBuildMetadata(this.settings.devBuildPath)
+    if (!devBuild) {
+      this.pendingDevBuild = null
       this.updateStatus({
         phase: 'not-available',
         channel: 'development',
@@ -330,18 +342,20 @@ export class UpdateManager implements UpdateService {
       return
     }
 
-    if (compareVersions(version, this.status.currentVersion) > 0) {
+    if (compareVersions(devBuild.version, this.status.currentVersion) > 0) {
+      this.pendingDevBuild = devBuild
       this.updateStatus({
         phase: 'available',
         channel: 'development',
-        availableVersion: version,
+        availableVersion: devBuild.version,
         downloaded: false,
         downloadProgress: 0,
-        message: `Development build ${version} is available`
+        message: `Development build ${devBuild.version} is available`
       })
       return
     }
 
+    this.pendingDevBuild = null
     this.updateStatus({
       phase: 'not-available',
       channel: 'development',
@@ -352,7 +366,35 @@ export class UpdateManager implements UpdateService {
     })
   }
 
-  private async readDevBundleVersion(basePath: string): Promise<string | null> {
+  private async readDevBuildMetadata(basePath: string): Promise<DevBuildMetadata | null> {
+    const appCandidates = [
+      join(basePath, 'MidiServer.app'),
+      basePath.endsWith('.app') ? basePath : null
+    ].filter((path): path is string => Boolean(path))
+
+    for (const appPath of appCandidates) {
+      const plistPath = join(appPath, 'Contents', 'Info.plist')
+      try {
+        const content = await fs.readFile(plistPath, 'utf8')
+        const version = extractBundleVersion(content)
+        const executableName = extractPlistValue(content, 'CFBundleExecutable')
+        if (!version || !executableName) {
+          continue
+        }
+
+        const executablePath = join(appPath, 'Contents', 'MacOS', executableName)
+        await fs.access(executablePath)
+
+        return {
+          version,
+          appPath,
+          executablePath
+        }
+      } catch {
+        // Try the next candidate
+      }
+    }
+
     const plistCandidates = [
       join(basePath, 'MidiServer.app', 'Contents', 'Info.plist'),
       join(basePath, 'Contents', 'Info.plist'),
@@ -364,7 +406,11 @@ export class UpdateManager implements UpdateService {
         const content = await fs.readFile(candidate, 'utf8')
         const version = extractBundleVersion(content)
         if (version) {
-          return version
+          return {
+            version,
+            appPath: null,
+            executablePath: null
+          }
         }
       } catch {
         // Try the next candidate
@@ -390,6 +436,12 @@ export class UpdateManager implements UpdateService {
   }
 }
 
+interface DevBuildMetadata {
+  version: string
+  appPath: string | null
+  executablePath: string | null
+}
+
 function extractBundleVersion(plist: string): string | null {
   const versionMatch = plist.match(
     /<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/i
@@ -405,6 +457,17 @@ function extractBundleVersion(plist: string): string | null {
     return shortVersionMatch[1]
   }
 
+  return null
+}
+
+function extractPlistValue(plist: string, key: string): string | null {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const keyValueMatch = plist.match(
+    new RegExp(`<key>${escapedKey}</key>\\s*<string>([^<]+)</string>`, 'i')
+  )
+  if (keyValueMatch?.[1]) {
+    return keyValueMatch[1]
+  }
   return null
 }
 
