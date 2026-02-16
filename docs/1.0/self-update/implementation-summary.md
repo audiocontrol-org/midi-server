@@ -30,6 +30,7 @@ Implemented the core self-update pipeline for production and development modes:
 - Exposed update functionality through existing API server instead of direct renderer-to-main IPC to keep web/electron parity.
 - Added update event streaming via SSE (`/api/update/stream`) for incremental UI status updates.
 - Kept dev mode explicitly opt-in with configurable local build path and clear channel status.
+- Implemented dev build path fallback to `MIDI_DEV_BUILD_PATH` when settings value is unset.
 
 ## Challenges and Solutions
 

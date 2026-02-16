@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: UpdateSettings = {
   autoDownload: false,
   autoInstallOnQuit: false,
   devMode: false,
-  devBuildPath: null,
+  devBuildPath: process.env.MIDI_DEV_BUILD_PATH || null,
   checkIntervalMinutes: 60
 }
 
@@ -277,12 +277,12 @@ export class UpdateManager implements UpdateService {
       this.watcher = null
     }
 
-    if (!this.settings.devMode || !this.settings.devBuildPath) {
+    const effectiveDevBuildPath = this.getEffectiveDevBuildPath()
+    if (!this.settings.devMode || !effectiveDevBuildPath) {
       return
     }
 
-    const watchPath = this.settings.devBuildPath
-    this.watcher = chokidar.watch(watchPath, {
+    this.watcher = chokidar.watch(effectiveDevBuildPath, {
       ignoreInitial: true,
       awaitWriteFinish: {
         stabilityThreshold: 500,
@@ -311,12 +311,13 @@ export class UpdateManager implements UpdateService {
   }
 
   private async checkDevelopmentBuild(): Promise<void> {
-    if (!this.settings.devBuildPath) {
+    const effectiveDevBuildPath = this.getEffectiveDevBuildPath()
+    if (!effectiveDevBuildPath) {
       this.updateStatus({
         phase: 'error',
         channel: 'development',
         message: 'Dev mode enabled, but no build path is configured',
-        lastError: 'Missing devBuildPath'
+        lastError: 'Missing devBuildPath (set settings value or MIDI_DEV_BUILD_PATH env var)'
       })
       return
     }
@@ -329,7 +330,7 @@ export class UpdateManager implements UpdateService {
       lastError: null
     })
 
-    const devBuild = await this.readDevBuildMetadata(this.settings.devBuildPath)
+    const devBuild = await this.readDevBuildMetadata(effectiveDevBuildPath)
     if (!devBuild) {
       this.pendingDevBuild = null
       this.updateStatus({
@@ -364,6 +365,10 @@ export class UpdateManager implements UpdateService {
       downloadProgress: null,
       message: 'Current version is up to date'
     })
+  }
+
+  private getEffectiveDevBuildPath(): string | null {
+    return this.settings.devBuildPath || process.env.MIDI_DEV_BUILD_PATH || null
   }
 
   private async readDevBuildMetadata(basePath: string): Promise<DevBuildMetadata | null> {
