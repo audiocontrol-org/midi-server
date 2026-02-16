@@ -1,0 +1,371 @@
+import assert from 'node:assert/strict'
+import { createServer } from 'node:net'
+import { get as httpGet, type IncomingMessage, type ClientRequest } from 'node:http'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import type { UpdateEvent, UpdateService, UpdateSettings, UpdateStatus } from '../../src/shared/types/update'
+
+function makeBuildInfo() {
+  return {
+    version: '0.1.0',
+    commit: 'test',
+    buildTime: new Date().toISOString(),
+    serial: 'v0.1.0-test'
+  }
+}
+
+function makeDefaultStatus(): UpdateStatus {
+  return {
+    phase: 'idle',
+    channel: 'production',
+    currentVersion: '0.1.0',
+    availableVersion: null,
+    downloadProgress: null,
+    downloaded: false,
+    message: null,
+    lastCheckedAt: null,
+    lastError: null
+  }
+}
+
+function makeDefaultSettings(): UpdateSettings {
+  return {
+    autoCheck: true,
+    autoDownload: false,
+    autoInstallOnQuit: false,
+    devMode: false,
+    devBuildPath: null,
+    checkIntervalMinutes: 60
+  }
+}
+
+class FakeUpdateService implements UpdateService {
+  private status: UpdateStatus = makeDefaultStatus()
+  private settings: UpdateSettings = makeDefaultSettings()
+  private listeners = new Set<(event: UpdateEvent) => void>()
+
+  getStatus(): UpdateStatus {
+    return { ...this.status }
+  }
+
+  getSettings(): UpdateSettings {
+    return { ...this.settings }
+  }
+
+  updateSettings(patch: Partial<UpdateSettings>): UpdateSettings {
+    this.settings = { ...this.settings, ...patch }
+    this.emit()
+    return this.getSettings()
+  }
+
+  async checkForUpdates(): Promise<UpdateStatus> {
+    this.status = { ...this.status, phase: 'checking', message: 'Checking...' }
+    this.emit()
+    return this.getStatus()
+  }
+
+  async downloadUpdate(): Promise<UpdateStatus> {
+    this.status = {
+      ...this.status,
+      phase: 'downloaded',
+      downloaded: true,
+      downloadProgress: 100,
+      message: 'Downloaded'
+    }
+    this.emit()
+    return this.getStatus()
+  }
+
+  async installUpdate(): Promise<void> {
+    this.status = { ...this.status, phase: 'installing', message: 'Installing...' }
+    this.emit()
+  }
+
+  onStatusChange(listener: (event: UpdateEvent) => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    this.listeners.clear()
+  }
+
+  private emit(): void {
+    const event: UpdateEvent = { type: 'status', status: this.getStatus() }
+    for (const listener of this.listeners) {
+      listener(event)
+    }
+  }
+}
+
+async function getFreePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const server = createServer()
+    server.once('error', reject)
+    server.listen(0, () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('Failed to allocate port')))
+        return
+      }
+
+      const port = address.port
+      server.close((err) => {
+        if (err) return reject(err)
+        resolve(port)
+      })
+    })
+  })
+}
+
+async function getJson<T>(url: string): Promise<{ status: number; body: T }> {
+  const response = await fetch(url)
+  return {
+    status: response.status,
+    body: (await response.json()) as T
+  }
+}
+
+async function postJson<T>(
+  url: string,
+  body?: unknown,
+  method: 'POST' | 'PUT' = 'POST'
+): Promise<{ status: number; body: T }> {
+  const response = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  })
+  return {
+    status: response.status,
+    body: (await response.json()) as T
+  }
+}
+
+async function testUpdateEndpointsConfigured(): Promise<void> {
+  const restoreConfigDir = await configureIsolatedRoutesStorage()
+  const { createApiServer } = await import('../../src/api-server')
+  const port = await getFreePort()
+  const updateService = new FakeUpdateService()
+  const server = createApiServer({
+    apiPort: port,
+    midiServerPort: 0,
+    midiServerBinaryPath: '/tmp/midi-http-server-test',
+    updateService,
+    buildInfo: makeBuildInfo()
+  })
+
+  await server.start()
+
+  try {
+    const sse = await openSseConnection(`http://localhost:${port}/api/update/stream`)
+    assert.equal(sse.statusCode, 200)
+    assert.match(sse.contentType, /text\/event-stream/i)
+
+    const connectedEvent = await sse.nextEvent<{ type: string }>(3000)
+    assert.equal(connectedEvent.type, 'connected')
+
+    const status = await getJson<UpdateStatus>(`http://localhost:${port}/api/update/status`)
+    assert.equal(status.status, 200)
+    assert.equal(status.body.phase, 'idle')
+
+    const settings = await getJson<UpdateSettings>(`http://localhost:${port}/api/update/settings`)
+    assert.equal(settings.status, 200)
+    assert.equal(settings.body.autoCheck, true)
+
+    const updatedSettings = await postJson<UpdateSettings>(
+      `http://localhost:${port}/api/update/settings`,
+      { autoDownload: true, checkIntervalMinutes: 15 },
+      'PUT'
+    )
+    assert.equal(updatedSettings.status, 200)
+    assert.equal(updatedSettings.body.autoDownload, true)
+    assert.equal(updatedSettings.body.checkIntervalMinutes, 15)
+
+    const check = await postJson<UpdateStatus>(`http://localhost:${port}/api/update/check`)
+    assert.equal(check.status, 200)
+    assert.equal(check.body.phase, 'checking')
+
+    const streamStatusEvent = await waitForSseStatusPhaseFromConnection(sse, 'checking', 3000)
+    assert.equal(streamStatusEvent.phase, 'checking')
+
+    const download = await postJson<UpdateStatus>(`http://localhost:${port}/api/update/download`)
+    assert.equal(download.status, 200)
+    assert.equal(download.body.phase, 'downloaded')
+    assert.equal(download.body.downloaded, true)
+
+    const install = await postJson<{ success: boolean }>(`http://localhost:${port}/api/update/install`)
+    assert.equal(install.status, 200)
+    assert.equal(install.body.success, true)
+
+    sse.close()
+  } finally {
+    await server.stop()
+    await updateService.shutdown()
+    restoreConfigDir()
+  }
+}
+
+async function testUpdateEndpointsUnconfigured(): Promise<void> {
+  const restoreConfigDir = await configureIsolatedRoutesStorage()
+  const { createApiServer } = await import('../../src/api-server')
+  const port = await getFreePort()
+  const server = createApiServer({
+    apiPort: port,
+    midiServerPort: 0,
+    midiServerBinaryPath: '/tmp/midi-http-server-test',
+    buildInfo: makeBuildInfo()
+  })
+
+  await server.start()
+
+  try {
+    const response = await getJson<{ error: string }>(`http://localhost:${port}/api/update/status`)
+    assert.equal(response.status, 501)
+    assert.match(response.body.error, /not available/i)
+
+    const streamResponse = await getJson<{ error: string }>(`http://localhost:${port}/api/update/stream`)
+    assert.equal(streamResponse.status, 501)
+    assert.match(streamResponse.body.error, /not available/i)
+  } finally {
+    await server.stop()
+    restoreConfigDir()
+  }
+}
+
+async function main(): Promise<void> {
+  await testUpdateEndpointsConfigured()
+  await testUpdateEndpointsUnconfigured()
+  console.log('update-api tests passed')
+}
+
+main().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})
+
+async function configureIsolatedRoutesStorage(): Promise<() => void> {
+  const previous = process.env.MIDI_SERVER_CONFIG_DIR
+  const dir = await mkdtemp(join(tmpdir(), 'midi-server-update-test-'))
+  await writeFile(join(dir, 'routes.json'), JSON.stringify({ routes: [] }), 'utf8')
+  process.env.MIDI_SERVER_CONFIG_DIR = dir
+
+  return () => {
+    if (previous === undefined) {
+      delete process.env.MIDI_SERVER_CONFIG_DIR
+      return
+    }
+    process.env.MIDI_SERVER_CONFIG_DIR = previous
+  }
+}
+
+async function waitForSseStatusPhaseFromConnection(
+  connection: SseConnection,
+  phase: UpdateStatus['phase'],
+  timeoutMs: number
+): Promise<UpdateStatus> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const event = await connection.nextEvent<{ type: string; status?: UpdateStatus }>(
+      Math.max(1, deadline - Date.now())
+    )
+    if (event.type === 'status' && event.status?.phase === phase) {
+      return event.status
+    }
+  }
+
+  throw new Error(`Timed out waiting for SSE status phase "${phase}"`)
+}
+
+interface SseConnection {
+  statusCode: number
+  contentType: string
+  nextEvent: <T>(timeoutMs: number) => Promise<T>
+  close: () => void
+}
+
+async function openSseConnection(url: string): Promise<SseConnection> {
+  return await new Promise((resolve, reject) => {
+    const queue: unknown[] = []
+    const waiters: Array<(value: unknown) => void> = []
+    let buffer = ''
+    let request: ClientRequest | null = null
+
+    const enqueue = (event: unknown): void => {
+      const waiter = waiters.shift()
+      if (waiter) {
+        waiter(event)
+      } else {
+        queue.push(event)
+      }
+    }
+
+    request = httpGet(url, (res: IncomingMessage) => {
+      res.setEncoding('utf8')
+      res.on('data', (chunk: string) => {
+        buffer += chunk
+        while (true) {
+          const separatorIndex = buffer.indexOf('\n\n')
+          if (separatorIndex === -1) {
+            return
+          }
+
+          const rawEvent = buffer.slice(0, separatorIndex)
+          buffer = buffer.slice(separatorIndex + 2)
+          const dataLine = rawEvent
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line.startsWith('data:'))
+          if (!dataLine) continue
+
+          const payload = dataLine.slice(5).trim()
+          if (!payload) continue
+
+          try {
+            enqueue(JSON.parse(payload))
+          } catch {
+            // Ignore malformed SSE payloads
+          }
+        }
+      })
+
+      res.on('error', reject)
+
+      resolve({
+        statusCode: res.statusCode ?? 0,
+        contentType: res.headers['content-type'] ?? '',
+        nextEvent: <T>(timeoutMs: number): Promise<T> =>
+          new Promise((eventResolve, eventReject) => {
+            if (queue.length > 0) {
+              eventResolve(queue.shift() as T)
+              return
+            }
+
+            const timer = setTimeout(() => {
+              const index = waiters.indexOf(onEvent)
+              if (index >= 0) {
+                waiters.splice(index, 1)
+              }
+              eventReject(new Error(`Timed out waiting for SSE data after ${timeoutMs}ms`))
+            }, timeoutMs)
+
+            const onEvent = (event: unknown): void => {
+              clearTimeout(timer)
+              eventResolve(event as T)
+            }
+
+            waiters.push(onEvent)
+          }),
+        close: (): void => {
+          request?.destroy()
+          res.destroy()
+        }
+      })
+    })
+
+    request.on('error', reject)
+  })
+}

@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useServerConnection } from '@/hooks/useServerConnection'
 import { usePlatform } from '@/hooks/usePlatform'
+import { useUpdateStatus } from '@/hooks/useUpdateStatus'
 import { ServerControl } from '@/components/ServerControl'
 import { RemoteServerControl } from '@/components/RemoteServerControl'
 import { PortList, generatePortId } from '@/components/PortList'
 import { PortDetail } from '@/components/PortDetail'
+import { UpdateSettingsButton } from '@/components/UpdateSettingsButton'
+import { UpdateSettingsModal } from '@/components/UpdateSettingsModal'
 import { BuildInfoButton } from '@/components/BuildInfoButton'
 import { BuildInfoModal } from '@/components/BuildInfoModal'
 import { ServerTabs } from '@/components/ServerTabs'
@@ -25,10 +28,12 @@ const SERVER_STATUS_CHECK_INTERVAL = 10000
 
 export function Dashboard(): React.JSX.Element {
   const platform = usePlatform()
+  const update = useUpdateStatus()
   const { status, ports, connect, disconnect, refresh } = useServerConnection({ autoConnect: false })
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
 
   // Open ports state
   const [openPorts, setOpenPorts] = useState<Map<string, OpenPort>>(new Map())
@@ -349,6 +354,8 @@ export function Dashboard(): React.JSX.Element {
   const openPortIds = new Set(openPorts.keys())
   const isViewingLocalServer = selectedServerUrl === localServerUrl
   const displayPorts = isViewingLocalServer ? ports : remotePorts
+  const hasUpdateAvailable =
+    update.status?.phase === 'available' || update.status?.phase === 'downloaded'
 
   return (
     <div className="min-h-screen p-6">
@@ -359,6 +366,24 @@ export function Dashboard(): React.JSX.Element {
             buildInfo={buildInfo}
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
+          />
+        </>
+      )}
+      {!update.loading && update.supported && update.status && update.settings && (
+        <>
+          <UpdateSettingsButton
+            onClick={() => setIsUpdateModalOpen(true)}
+            hasUpdateAvailable={hasUpdateAvailable}
+          />
+          <UpdateSettingsModal
+            isOpen={isUpdateModalOpen}
+            onClose={() => setIsUpdateModalOpen(false)}
+            status={update.status}
+            settings={update.settings}
+            onCheck={update.checkNow}
+            onDownload={update.downloadNow}
+            onInstall={update.installNow}
+            onSave={update.saveSettings}
           />
         </>
       )}

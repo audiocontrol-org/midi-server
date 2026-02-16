@@ -9,6 +9,7 @@ import { DiscoveryService } from './discovery'
 import { RoutesStorage } from './routes-storage'
 import { RoutingEngine } from './routing-engine'
 import { createRoutingHandlers, type RoutingHandlers } from './routing-handlers'
+import { UpdateHandlers } from './update-handlers'
 
 export class ApiServer {
   private server: Server | null = null
@@ -23,12 +24,14 @@ export class ApiServer {
   private routesStorage: RoutesStorage | null = null
   private routingEngine: RoutingEngine | null = null
   private routingHandlers: RoutingHandlers | null = null
+  private updateHandlers: UpdateHandlers
 
   constructor(config: ApiServerConfig, buildInfo: BuildInfo) {
     this.config = config
     this.buildInfo = buildInfo
     this.logBuffer = new LogBuffer()
     this.processManager = new ProcessManager(config.midiServerBinaryPath, this.logBuffer)
+    this.updateHandlers = new UpdateHandlers(config.updateService)
 
     // Subscribe to log entries for SSE broadcast
     this.logBuffer.subscribe((entry) => {
@@ -104,6 +107,8 @@ export class ApiServer {
   }
 
   async stop(): Promise<void> {
+    this.updateHandlers.dispose()
+
     // Stop routing services
     if (this.routingEngine) {
       this.routingEngine.stop()
@@ -178,6 +183,28 @@ export class ApiServer {
 
       if (path === '/api/config') {
         return this.handleConfig(res)
+      }
+
+      if (path === '/api/update/status' && req.method === 'GET') {
+        return this.updateHandlers.handleStatus(res)
+      }
+      if (path === '/api/update/check' && req.method === 'POST') {
+        return await this.updateHandlers.handleCheck(res)
+      }
+      if (path === '/api/update/download' && req.method === 'POST') {
+        return await this.updateHandlers.handleDownload(res)
+      }
+      if (path === '/api/update/install' && req.method === 'POST') {
+        return await this.updateHandlers.handleInstall(res)
+      }
+      if (path === '/api/update/settings' && req.method === 'GET') {
+        return this.updateHandlers.handleGetSettings(res)
+      }
+      if (path === '/api/update/settings' && req.method === 'PUT') {
+        return await this.updateHandlers.handlePutSettings(req, res)
+      }
+      if (path === '/api/update/stream' && req.method === 'GET') {
+        return this.updateHandlers.handleStream(res)
       }
 
       // Discovery routes

@@ -19,6 +19,18 @@ DASHBOARD_DIR="$PROJECT_ROOT/dashboard"
 PKG_DIR="$PROJECT_ROOT/build/pkg"
 STAGING_DIR="$PKG_DIR/staging"
 RESOURCES_DIR="$SCRIPT_DIR/resources"
+RELEASE_CONFIG_FILE="$SCRIPT_DIR/release.config.sh"
+RELEASE_SECRETS_HELPER="$SCRIPT_DIR/release-secrets.sh"
+
+if [ -f "$RELEASE_CONFIG_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$RELEASE_CONFIG_FILE"
+fi
+if [ -f "$RELEASE_SECRETS_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$RELEASE_SECRETS_HELPER"
+    load_release_secrets
+fi
 
 # Signing identities (set via environment or arguments)
 DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
@@ -28,6 +40,28 @@ DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 APPLE_ID="${APPLE_ID:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
+CSC_NAME="${CSC_NAME:-}"
+CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-}"
+
+if [ -z "$DEVELOPER_ID_APP" ] && [ -n "${DEVELOPER_ID_APP_DEFAULT:-}" ]; then
+    DEVELOPER_ID_APP="$DEVELOPER_ID_APP_DEFAULT"
+fi
+if [ -z "$DEVELOPER_ID_INSTALLER" ] && [ -n "${DEVELOPER_ID_INSTALLER_DEFAULT:-}" ]; then
+    DEVELOPER_ID_INSTALLER="$DEVELOPER_ID_INSTALLER_DEFAULT"
+fi
+if [ -z "$CSC_NAME" ] && [ -n "${CSC_NAME_DEFAULT:-}" ]; then
+    CSC_NAME="$CSC_NAME_DEFAULT"
+fi
+if [ -z "$CSC_IDENTITY_AUTO_DISCOVERY" ] && [ -n "${CSC_IDENTITY_AUTO_DISCOVERY_DEFAULT:-}" ]; then
+    CSC_IDENTITY_AUTO_DISCOVERY="$CSC_IDENTITY_AUTO_DISCOVERY_DEFAULT"
+fi
+if [ -z "$APPLE_TEAM_ID" ] && [ -n "${APPLE_TEAM_ID_DEFAULT:-}" ]; then
+    APPLE_TEAM_ID="$APPLE_TEAM_ID_DEFAULT"
+fi
+
+export CSC_NAME
+export CSC_IDENTITY_AUTO_DISCOVERY
+export APPLE_TEAM_ID
 
 # Flags
 SKIP_BUILD=false
@@ -51,9 +85,15 @@ Options:
 Environment variables:
     DEVELOPER_ID_APP              Developer ID Application identity
     DEVELOPER_ID_INSTALLER        Developer ID Installer identity
+    CSC_NAME                      electron-builder signing identity (short name)
+    CSC_IDENTITY_AUTO_DISCOVERY   Set to false to force CSC_NAME usage
     APPLE_ID                      Apple ID for notarization
     APPLE_TEAM_ID                 Team ID for notarization
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
+    
+Defaults are loaded from packaging/macos/release.config.sh when present.
+Encrypted notarization secrets are loaded from ~/.config/audiocontrol.org/midi-server/release.secrets.enc
+when RELEASE_SECRETS_PASSWORD is set.
 EOF
     exit 1
 }
@@ -147,14 +187,13 @@ if [ ! -f "$CLI_BINARY" ]; then
 fi
 echo "Found CLI binary: $CLI_BINARY"
 
-# Step 2: Build the Electron app (includes CLI via extraResources)
+# Step 2: Build the Electron app and update artifacts (dmg, zip, latest-mac.yml)
 if [ "$SKIP_BUILD" = false ]; then
     echo ""
-    echo "=== Step 2: Building Electron App (with bundled CLI) ==="
+    echo "=== Step 2: Building Electron App + update artifacts ==="
     cd "$DASHBOARD_DIR"
     npm install
-    npm run build
-    npx electron-builder --mac --dir
+    npm run build:mac
 else
     echo ""
     echo "=== Step 2: Skipping Electron build (--skip-build) ==="
@@ -176,6 +215,34 @@ if [ ! -f "$BUNDLED_CLI" ]; then
 fi
 echo "CLI bundled at: $BUNDLED_CLI"
 
+# Verify update artifacts for electron-updater
+LATEST_MANIFEST=$(find "$DASHBOARD_DIR/dist" -name "latest-mac*.yml" -type f 2>/dev/null | head -1)
+ZIP_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-$VERSION*-mac.zip" -type f 2>/dev/null | head -1)
+if [ -z "$ZIP_ARTIFACT" ]; then
+    ZIP_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-mac.zip" -type f 2>/dev/null | head -1)
+fi
+DMG_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-$VERSION*.dmg" -type f 2>/dev/null | head -1)
+if [ -z "$DMG_ARTIFACT" ]; then
+    DMG_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*.dmg" -type f 2>/dev/null | head -1)
+fi
+
+if [ -z "$LATEST_MANIFEST" ] || [ ! -f "$LATEST_MANIFEST" ]; then
+    echo "Error: latest-mac manifest not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+if [ -z "$ZIP_ARTIFACT" ] || [ ! -f "$ZIP_ARTIFACT" ]; then
+    echo "Error: macOS zip update artifact not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+if [ -z "$DMG_ARTIFACT" ] || [ ! -f "$DMG_ARTIFACT" ]; then
+    echo "Error: macOS dmg installer artifact not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+
+echo "Found update manifest: $LATEST_MANIFEST"
+echo "Found update zip: $ZIP_ARTIFACT"
+echo "Found installer dmg: $DMG_ARTIFACT"
+
 # Step 3: Create staging directory
 echo ""
 echo "=== Step 3: Creating staging directory ==="
@@ -186,6 +253,10 @@ mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION"
 cp -R "$ELECTRON_APP_PATH" "$STAGING_DIR$APP_INSTALL_LOCATION/"
 STAGED_APP="$STAGING_DIR$APP_INSTALL_LOCATION/$(basename "$ELECTRON_APP_PATH")"
 echo "Staged App: $STAGED_APP"
+
+# Avoid AppleDouble metadata files (._*) in package payload; these can break
+# code signature validation during notarization.
+xattr -cr "$STAGED_APP" || true
 
 # Step 4: Sign the app
 if [ "$SKIP_SIGN" = false ]; then
@@ -223,13 +294,39 @@ echo ""
 echo "=== Step 5: Creating installer package ==="
 
 COMPONENT_PKG="$PKG_DIR/$APP_NAME-component.pkg"
+COMPONENT_PLIST="$PKG_DIR/component.plist"
+
+# Prevent AppleDouble files from being generated in package archives.
+export COPYFILE_DISABLE=1
+
+# Prevent PackageKit from relocating the app to previously moved/staging paths.
 pkgbuild \
+    --analyze \
     --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
-    --identifier "$BUNDLE_ID" \
-    --version "$VERSION" \
-    --install-location "$APP_INSTALL_LOCATION" \
-    --scripts "$SCRIPT_DIR/scripts" \
-    "$COMPONENT_PKG"
+    "$COMPONENT_PLIST"
+
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST" >/dev/null
+
+if [ "$SKIP_SIGN" = false ]; then
+    pkgbuild \
+        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --identifier "$BUNDLE_ID" \
+        --version "$VERSION" \
+        --install-location "$APP_INSTALL_LOCATION" \
+        --component-plist "$COMPONENT_PLIST" \
+        --scripts "$SCRIPT_DIR/scripts" \
+        --sign "$DEVELOPER_ID_INSTALLER" \
+        "$COMPONENT_PKG"
+else
+    pkgbuild \
+        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --identifier "$BUNDLE_ID" \
+        --version "$VERSION" \
+        --install-location "$APP_INSTALL_LOCATION" \
+        --component-plist "$COMPONENT_PLIST" \
+        --scripts "$SCRIPT_DIR/scripts" \
+        "$COMPONENT_PKG"
+fi
 echo "Created: $COMPONENT_PKG"
 
 # Step 6: Create distribution package

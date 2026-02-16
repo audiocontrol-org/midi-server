@@ -1,6 +1,6 @@
 {
   "name": "dashboard",
-  "version": "0.1.0",
+  "version": "0.1.9",
   "description": "MIDI Server Dashboard - Electron and Web",
   "main": "./out/main/index.js",
   "author": "audiocontrol.org",
@@ -12,6 +12,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "test:integration": "tsx tests/integration/cross-server-routing.test.ts",
+    "test:update-api": "tsx tests/update/update-api.test.ts",
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "postinstall": "electron-builder install-app-deps",
@@ -23,6 +24,8 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "chokidar": "^4.0.3",
+    "electron-updater": "^6.6.2",
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
