@@ -53,6 +53,7 @@ Implemented the core self-update pipeline for production and development modes:
 - [ ] Dev mode watcher detects local builds
 - [x] Settings persist across restarts
 - [x] Update API endpoints validated via automated test
+- [x] Update SSE stream validated via automated test
 
 ## Files Changed
 
