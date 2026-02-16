@@ -119,12 +119,25 @@ export class UpdateManager implements UpdateService {
 
       this.updateStatus({ phase: 'installing', message: 'Restarting to apply development build' })
 
-      app.relaunch({
-        execPath: this.pendingDevBuild.executablePath,
-        args: process.argv.slice(1)
-      })
-      app.exit(0)
-      return
+      try {
+        app.relaunch({
+          execPath: this.pendingDevBuild.executablePath,
+          args: process.argv.slice(1)
+        })
+        app.exit(0)
+        return
+      } catch (error) {
+        this.updateStatus({
+          phase: 'error',
+          channel: 'development',
+          message: 'Failed to relaunch into development build, falling back to current app',
+          lastError: getErrorMessage(error)
+        })
+
+        app.relaunch()
+        app.exit(0)
+        return
+      }
     }
 
     if (!this.status.downloaded) {
