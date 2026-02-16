@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useServerConnection } from '@/hooks/useServerConnection'
 import { usePlatform } from '@/hooks/usePlatform'
+import { useUpdateStatus } from '@/hooks/useUpdateStatus'
 import { ServerControl } from '@/components/ServerControl'
 import { RemoteServerControl } from '@/components/RemoteServerControl'
 import { PortList, generatePortId } from '@/components/PortList'
 import { PortDetail } from '@/components/PortDetail'
+import { UpdateNotification } from '@/components/UpdateNotification'
+import { UpdateProgress } from '@/components/UpdateProgress'
+import { UpdateSettings } from '@/components/UpdateSettings'
 import { BuildInfoButton } from '@/components/BuildInfoButton'
 import { BuildInfoModal } from '@/components/BuildInfoModal'
 import { ServerTabs } from '@/components/ServerTabs'
@@ -25,6 +29,7 @@ const SERVER_STATUS_CHECK_INTERVAL = 10000
 
 export function Dashboard(): React.JSX.Element {
   const platform = usePlatform()
+  const update = useUpdateStatus()
   const { status, ports, connect, disconnect, refresh } = useServerConnection({ autoConnect: false })
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
@@ -372,6 +377,23 @@ export function Dashboard(): React.JSX.Element {
           </p>
           <p className="text-xs text-gray-600 mt-1">Running in {platform.name} mode</p>
         </header>
+
+        {!update.loading && update.supported && update.status && update.settings && (
+          <div className="space-y-3">
+            <UpdateNotification
+              status={update.status}
+              onCheck={() => void update.checkNow()}
+              onDownload={() => void update.downloadNow()}
+              onInstall={() => void update.installNow()}
+            />
+            <UpdateProgress status={update.status} />
+            <UpdateSettings
+              settings={update.settings}
+              onSave={update.saveSettings}
+              onCheck={update.checkNow}
+            />
+          </div>
+        )}
 
         {/* Server Tabs */}
         {discoveredServers.length > 0 && (

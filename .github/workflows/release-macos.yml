@@ -1,0 +1,66 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard dependencies
+        run: npm ci
+        working-directory: dashboard
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build MIDI server binary
+        run: cmake --build build --config Release
+
+      - name: Build Electron macOS artifacts
+        run: npm run build:mac
+        working-directory: dashboard
+
+      - name: Verify update artifacts
+        run: |
+          ls -la dashboard/dist
+          test -n "$(find dashboard/dist -name 'latest-mac*.yml' -type f | head -1)"
+          test -n "$(find dashboard/dist -name '*-mac.zip' -type f | head -1)"
+          test -n "$(find dashboard/dist -name '*.dmg' -type f | head -1)"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MidiServer-macOS-release
+          path: |
+            dashboard/dist/*.dmg
+            dashboard/dist/*.zip
+            dashboard/dist/*.blockmap
+            dashboard/dist/latest-mac*.yml
+
+      - name: Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dashboard/dist/*.dmg
+            dashboard/dist/*.zip
+            dashboard/dist/*.blockmap
+            dashboard/dist/latest-mac*.yml

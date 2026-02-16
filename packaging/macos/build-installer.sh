@@ -147,14 +147,13 @@ if [ ! -f "$CLI_BINARY" ]; then
 fi
 echo "Found CLI binary: $CLI_BINARY"
 
-# Step 2: Build the Electron app (includes CLI via extraResources)
+# Step 2: Build the Electron app and update artifacts (dmg, zip, latest-mac.yml)
 if [ "$SKIP_BUILD" = false ]; then
     echo ""
-    echo "=== Step 2: Building Electron App (with bundled CLI) ==="
+    echo "=== Step 2: Building Electron App + update artifacts ==="
     cd "$DASHBOARD_DIR"
     npm install
-    npm run build
-    npx electron-builder --mac --dir
+    npm run build:mac
 else
     echo ""
     echo "=== Step 2: Skipping Electron build (--skip-build) ==="
@@ -175,6 +174,28 @@ if [ ! -f "$BUNDLED_CLI" ]; then
     exit 1
 fi
 echo "CLI bundled at: $BUNDLED_CLI"
+
+# Verify update artifacts for electron-updater
+LATEST_MANIFEST=$(find "$DASHBOARD_DIR/dist" -name "latest-mac*.yml" -type f 2>/dev/null | head -1)
+ZIP_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-mac.zip" -type f 2>/dev/null | head -1)
+DMG_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*.dmg" -type f 2>/dev/null | head -1)
+
+if [ -z "$LATEST_MANIFEST" ] || [ ! -f "$LATEST_MANIFEST" ]; then
+    echo "Error: latest-mac manifest not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+if [ -z "$ZIP_ARTIFACT" ] || [ ! -f "$ZIP_ARTIFACT" ]; then
+    echo "Error: macOS zip update artifact not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+if [ -z "$DMG_ARTIFACT" ] || [ ! -f "$DMG_ARTIFACT" ]; then
+    echo "Error: macOS dmg installer artifact not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+
+echo "Found update manifest: $LATEST_MANIFEST"
+echo "Found update zip: $ZIP_ARTIFACT"
+echo "Found installer dmg: $DMG_ARTIFACT"
 
 # Step 3: Create staging directory
 echo ""
