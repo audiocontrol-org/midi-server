@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react'
 import type { ConnectionStatus } from '@/types/api'
 import type { ServerProcess } from '@/platform'
 import { StatusIndicator } from '@/components/StatusIndicator'
-import { usePlatform } from '@/hooks/usePlatform'
 
 interface ServerControlProps {
   connectionStatus: ConnectionStatus
@@ -25,21 +23,12 @@ export function ServerControl({
   onStartServer,
   onStopServer
 }: ServerControlProps): React.JSX.Element {
-  const platform = usePlatform()
-  const [midiPort, setMidiPort] = useState<number | null>(null)
-
-  // Fetch configured MIDI port
-  useEffect(() => {
-    platform.getConfig().then((config) => {
-      setMidiPort(config.midiServerPort)
-    }).catch(console.error)
-  }, [platform])
-
   const handleServerToggle = (): void => {
     if (serverProcess?.running) {
       onStopServer?.()
-    } else if (midiPort) {
-      onStartServer?.(midiPort)
+    } else {
+      // Use port 0 to let OS assign an available port
+      onStartServer?.(0)
     }
   }
 
@@ -63,19 +52,20 @@ export function ServerControl({
         <div className="border-b border-gray-700 pb-4">
           <h3 className="text-sm font-medium text-gray-400 mb-2">Server Process</h3>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Port:</span>
-              <span className="text-sm text-white font-mono">
-                {midiPort ?? '...'}
-              </span>
-            </div>
+            {serverProcess?.running && serverProcess.port && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Port:</span>
+                <span className="text-sm text-white font-mono">
+                  {serverProcess.port}
+                </span>
+              </div>
+            )}
             <button
               onClick={handleServerToggle}
-              disabled={!midiPort}
               className={`px-4 py-1 rounded-md font-medium text-sm transition-colors ${
                 serverProcess?.running
                   ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-green-600 hover:bg-green-700 disabled:bg-gray-600'
+                  : 'bg-green-600 hover:bg-green-700'
               }`}
             >
               {serverProcess?.running ? 'Stop Server' : 'Start Server'}

@@ -1,10 +1,11 @@
 import { useRef, useEffect, useState } from 'react'
-import type { LogEntry, LogSeverity } from '@/platform'
+import type { LogEntry, LogSeverity, BuildInfo } from '@/platform'
 import type { LogFilters } from '@/hooks/useConsoleLogs'
 
 interface ConsoleLogViewerProps {
   logs: LogEntry[]
   filters: LogFilters
+  buildInfo: BuildInfo
   onToggleFilter: (severity: LogSeverity) => void
   onClear: () => void
 }
@@ -50,6 +51,7 @@ function formatTimestamp(timestamp: number): string {
 export function ConsoleLogViewer({
   logs,
   filters,
+  buildInfo,
   onToggleFilter,
   onClear
 }: ConsoleLogViewerProps): React.JSX.Element {
@@ -70,13 +72,25 @@ export function ConsoleLogViewer({
   }
 
   const copyToClipboard = async (): Promise<void> => {
-    const text = logs
+    const header = [
+      '=== MIDI Server Dashboard Logs ===',
+      `Version: ${buildInfo.version}`,
+      `Commit: ${buildInfo.commit}`,
+      `Build Time: ${buildInfo.buildTime}`,
+      `Serial: ${buildInfo.serial}`,
+      `Copied: ${new Date().toISOString()}`,
+      '================================',
+      ''
+    ].join('\n')
+
+    const logText = logs
       .map(
         (log) =>
           `[${formatTimestamp(log.timestamp)}] [${SOURCE_LABELS[log.source]}] [${log.severity.toUpperCase()}] ${log.message}`
       )
       .join('\n')
-    await navigator.clipboard.writeText(text)
+
+    await navigator.clipboard.writeText(header + logText)
   }
 
   return (

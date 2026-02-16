@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { join } from 'path'
 import { ApiServer, getBuildInfo } from './server'
-import type { ApiServerConfig } from './types'
+import type { ApiServerConfig, BuildInfo } from './types'
 
 export { ApiServer, getBuildInfo } from './server'
 export { LogBuffer, parseSeverityFromMessage } from './log-buffer'
@@ -10,17 +10,16 @@ export { apiServerPlugin } from './vite-plugin'
 export type { ApiServerConfig, ServerStatus, BuildInfo, LogEntry, LogSeverity } from './types'
 
 const DEFAULT_API_PORT = 3001
-const DEFAULT_MIDI_PORT = 8080
+const DEFAULT_MIDI_PORT = 0 // Let OS assign an available port
 
-export function createApiServer(config: Partial<ApiServerConfig> & { version: string }): ApiServer {
+export function createApiServer(config: Partial<ApiServerConfig> & { buildInfo: BuildInfo }): ApiServer {
   const fullConfig: ApiServerConfig = {
     apiPort: config.apiPort ?? DEFAULT_API_PORT,
     midiServerPort: config.midiServerPort ?? DEFAULT_MIDI_PORT,
     midiServerBinaryPath: config.midiServerBinaryPath ?? ''
   }
 
-  const buildInfo = getBuildInfo(config.version)
-  return new ApiServer(fullConfig, buildInfo)
+  return new ApiServer(fullConfig, config.buildInfo)
 }
 
 // CLI entry point - only runs when executed directly
@@ -37,11 +36,14 @@ async function main(): Promise<void> {
   console.log(`  MIDI Port: ${midiPort}`)
   console.log(`  MIDI Binary: ${binaryPath}`)
 
+  // For CLI mode, generate build info at runtime
+  const buildInfo = getBuildInfo('0.1.0')
+
   const server = createApiServer({
     apiPort,
     midiServerPort: midiPort,
     midiServerBinaryPath: binaryPath,
-    version: '1.0.0'
+    buildInfo
   })
 
   await server.start()

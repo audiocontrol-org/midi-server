@@ -4,6 +4,12 @@ import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import packageJson from './package.json'
+import { apiServerPlugin } from './src/api-server/vite-plugin'
+
+// Use env var or resolve from config file location
+const midiServerBinaryPath =
+  process.env.MIDI_BINARY_PATH ||
+  resolve(__dirname, '../build/MidiHttpServer_artefacts/Release/MidiHttpServer')
 
 function getBuildInfo(): {
   version: string
@@ -33,6 +39,9 @@ export default defineConfig({
       alias: {
         '@shared': resolve('src/shared')
       }
+    },
+    define: {
+      __BUILD_INFO__: JSON.stringify(buildInfo)
     }
   },
   preload: {
@@ -52,6 +61,13 @@ export default defineConfig({
     define: {
       __BUILD_INFO__: JSON.stringify(buildInfo)
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [
+      react(),
+      tailwindcss(),
+      apiServerPlugin({
+        midiServerBinaryPath,
+        buildInfo
+      })
+    ]
   }
 })

@@ -1,13 +1,13 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'http'
-import { ApiServer, getBuildInfo } from './server'
-import type { ApiServerConfig } from './types'
+import { ApiServer } from './server'
+import type { ApiServerConfig, BuildInfo } from './types'
 
 interface ApiServerPluginOptions {
   apiPort?: number
   midiServerPort?: number
   midiServerBinaryPath: string
-  version: string
+  buildInfo: BuildInfo
 }
 
 export function apiServerPlugin(options: ApiServerPluginOptions): Plugin {
@@ -23,8 +23,7 @@ export function apiServerPlugin(options: ApiServerPluginOptions): Plugin {
         midiServerBinaryPath: options.midiServerBinaryPath
       }
 
-      const buildInfo = getBuildInfo(options.version)
-      apiServer = new ApiServer(config, buildInfo)
+      apiServer = new ApiServer(config, options.buildInfo)
 
       // Add middleware to handle API routes (runs before Vite's middleware)
       server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {

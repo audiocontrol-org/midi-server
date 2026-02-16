@@ -78,6 +78,7 @@ export function BuildInfoModal({
           <ConsoleLogViewer
             logs={filteredLogs}
             filters={filters}
+            buildInfo={buildInfo}
             onToggleFilter={toggleFilter}
             onClear={clearLogs}
           />

@@ -12,20 +12,25 @@
         h1 { font-size: 16px; margin-bottom: 10px; }
         p { margin: 8px 0; }
         code {
-            background: #f0f0f0;
+            background: rgba(128, 128, 128, 0.2);
             padding: 2px 6px;
             border-radius: 3px;
             font-family: Menlo, Monaco, monospace;
+        }
+        @media (prefers-color-scheme: dark) {
+            code {
+                background: rgba(255, 255, 255, 0.1);
+            }
         }
     </style>
 </head>
 <body>
     <h1>Installation Complete</h1>
-    <p>MIDI HTTP Server has been installed successfully.</p>
-    <p><strong>To start the server:</strong></p>
-    <p><code>midi-http-server --port 8080</code></p>
-    <p><strong>To list available MIDI ports:</strong></p>
-    <p><code>curl http://localhost:8080/ports</code></p>
-    <p>For documentation, visit the project repository.</p>
+    <p>MIDI Server has been installed successfully.</p>
+    <p><strong>To get started:</strong></p>
+    <p>Open <strong>MidiServer</strong> from <code>/Applications/AudioControl/</code></p>
+    <p><strong>CLI usage:</strong></p>
+    <p>The CLI is bundled inside the app. You can create an alias:</p>
+    <p><code>alias midi-http-server="/Applications/AudioControl/MidiServer.app/Contents/Resources/bin/midi-http-server"</code></p>
 </body>
 </html>

@@ -80,7 +80,7 @@ async function startServer(midiPort: number, forcedApiPort?: number | null): Pro
       apiServerPlugin({
         midiServerPort: midiPort,
         midiServerBinaryPath,
-        version: packageJson.version
+        buildInfo: getBuildInfo()
       })
     ],
     server: {

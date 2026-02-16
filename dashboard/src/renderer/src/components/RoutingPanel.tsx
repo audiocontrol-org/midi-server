@@ -33,18 +33,6 @@ export function RoutingPanel({
     }
   }
 
-  const getStatusLabel = (status: string): string => {
-    switch (status) {
-      case 'active':
-        return 'Active'
-      case 'error':
-        return 'Error'
-      case 'disabled':
-      default:
-        return 'Disabled'
-    }
-  }
-
   return (
     <div className="bg-gray-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-4">

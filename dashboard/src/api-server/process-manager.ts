@@ -6,6 +6,7 @@ export class ProcessManager {
   private serverProcess: ChildProcess | null = null
   private serverPort: number | null = null
   private binaryPath: string
+  private portResolve: ((port: number) => void) | null = null
 
   constructor(
     binaryPath: string,
@@ -28,21 +29,38 @@ export class ProcessManager {
     }
   }
 
-  async start(port: number): Promise<ServerStatus> {
+  async start(port: number = 0): Promise<ServerStatus> {
     if (this.serverProcess && this.serverProcess.exitCode === null) {
       throw new Error('Server is already running')
     }
 
-    this.addLog(`Starting MIDI server: ${this.binaryPath} ${port}`, 'system')
+    this.addLog(`Starting MIDI server: ${this.binaryPath} ${port === 0 ? '(auto-assign port)' : port}`, 'system')
+
+    // Create a promise to wait for the actual port
+    const portPromise = new Promise<number>((resolve) => {
+      this.portResolve = resolve
+    })
 
     this.serverProcess = spawn(this.binaryPath, [String(port)], {
       stdio: ['ignore', 'pipe', 'pipe']
     })
 
-    this.serverPort = port
+    this.serverPort = port === 0 ? null : port
 
     this.serverProcess.stdout?.on('data', (data: Buffer) => {
       const message = data.toString()
+
+      // Parse actual port from server output (e.g., "MIDI_SERVER_PORT=8080")
+      const portMatch = message.match(/MIDI_SERVER_PORT=(\d+)/)
+      if (portMatch) {
+        const actualPort = parseInt(portMatch[1], 10)
+        this.serverPort = actualPort
+        if (this.portResolve) {
+          this.portResolve(actualPort)
+          this.portResolve = null
+        }
+      }
+
       this.addLog(message, 'server', false)
     })
 
@@ -63,10 +81,24 @@ export class ProcessManager {
       this.addLog(message, 'system', true)
       this.serverProcess = null
       this.serverPort = null
+      if (this.portResolve) {
+        this.portResolve(0) // Resolve with 0 to indicate failure
+        this.portResolve = null
+      }
     })
 
-    // Wait for server to start
-    await this.waitForHealth(port, 5000)
+    // Wait for actual port to be reported by the server
+    const actualPort = await Promise.race([
+      portPromise,
+      new Promise<number>((resolve) => setTimeout(() => resolve(0), 5000))
+    ])
+
+    if (actualPort === 0) {
+      throw new Error('Server failed to report port within timeout')
+    }
+
+    // Wait for server to respond to health checks
+    await this.waitForHealth(actualPort, 5000)
 
     return this.getStatus()
   }

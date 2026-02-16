@@ -490,8 +490,19 @@ public:
 
         // Start server in a separate thread
         serverThread = std::thread([this]() {
-            std::cout << "HTTP Server listening on port " << serverPort << std::endl;
-            server->listen("0.0.0.0", serverPort);
+            if (serverPort == 0) {
+                // Let OS assign an available port
+                int actualPort = server->bind_to_any_port("0.0.0.0");
+                serverPort = actualPort;
+                // Print in parseable format for ProcessManager
+                std::cout << "MIDI_SERVER_PORT=" << actualPort << std::endl;
+                std::cout << "HTTP Server listening on port " << actualPort << std::endl;
+                server->listen_after_bind();
+            } else {
+                std::cout << "MIDI_SERVER_PORT=" << serverPort << std::endl;
+                std::cout << "HTTP Server listening on port " << serverPort << std::endl;
+                server->listen("0.0.0.0", serverPort);
+            }
         });
     }
 

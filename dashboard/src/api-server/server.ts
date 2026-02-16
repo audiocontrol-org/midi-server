@@ -251,11 +251,19 @@ export class ApiServer {
 
       // Proxy to MIDI server (strip /midi prefix)
       if (path.startsWith('/midi')) {
+        const status = this.processManager.getStatus()
+        if (!status.running || !status.port) {
+          res.statusCode = 503
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'MIDI server not running' }))
+          return
+        }
+
         const midiPath = path.slice(5) || '/'
         return await proxyToMidiServer(
           req,
           res,
-          { targetHost: 'localhost', targetPort: this.config.midiServerPort },
+          { targetHost: 'localhost', targetPort: status.port },
           midiPath
         )
       }

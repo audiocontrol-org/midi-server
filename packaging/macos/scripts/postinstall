@@ -17,9 +17,6 @@ if [ -f "$INSTALL_PATH" ]; then
 
     # Make executable (should already be, but ensure)
     chmod +x "$INSTALL_PATH"
-
-    # Print version/help for verification
-    "$INSTALL_PATH" --help 2>/dev/null || true
 else
     echo "Error: midi-http-server not found at $INSTALL_PATH"
     exit 1

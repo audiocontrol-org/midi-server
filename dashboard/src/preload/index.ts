@@ -3,7 +3,8 @@ import { contextBridge } from 'electron'
 // Minimal preload - just expose platform detection
 // All actual functionality is now handled via HTTP to the API server
 const electronAPI = {
-  isElectron: true
+  isElectron: true,
+  isDev: process.env.NODE_ENV === 'development'
 }
 
 if (process.contextIsolated) {
