@@ -1,56 +1,81 @@
 # Implementation Summary: Self-Updating Shell
 
-**Status:** Not Started
-**Completed:** TBD
-**Author:** TBD
+**Status:** In Progress
+**Completed:** 2026-02-16 (partial)
+**Author:** Codex + Orion
 
 ## Overview
 
-_To be completed after implementation._
+Implemented the core self-update pipeline for production and development modes:
+
+- Main-process update service (`UpdateManager`) with `electron-updater` integration
+- Development mode local build watcher via `chokidar`
+- Update API endpoints + SSE stream
+- Dashboard update UI (notification, progress, settings)
+- macOS release workflow and artifact checks (`dmg`, `zip`, `latest-mac.yml`)
 
 ## What Was Built
-
-_To be completed after implementation._
 
 ### Components Added
 
 | Component | Description |
 |-----------|-------------|
-| UpdateManager | _TBD_ |
-| Update API endpoints | _TBD_ |
-| Update UI components | _TBD_ |
-| Build script changes | _TBD_ |
+| UpdateManager | Added update state machine, persisted settings, production checks/download/install, dev build detection and relaunch |
+| Update API endpoints | Added `/api/update/status`, `/check`, `/download`, `/install`, `/settings`, `/stream` |
+| Update UI components | Added `useUpdateStatus`, `UpdateNotification`, `UpdateProgress`, `UpdateSettings`, and dashboard integration |
+| Build script changes | Updated macOS installer/build flow to verify updater artifacts and added release workflow |
 
 ## Technical Decisions
 
-_Document key technical decisions made during implementation._
+- Exposed update functionality through existing API server instead of direct renderer-to-main IPC to keep web/electron parity.
+- Added update event streaming via SSE (`/api/update/stream`) for incremental UI status updates.
+- Kept dev mode explicitly opt-in with configurable local build path and clear channel status.
 
 ## Challenges and Solutions
 
-_Document any challenges encountered and how they were resolved._
+- `RoutesStorage` reads config dir at module load time, which affected update API tests.
+  - Solution: test harness now sets `MIDI_SERVER_CONFIG_DIR` before lazy-importing API modules.
+- Sandbox blocks local IPC sockets for `tsx` during tests.
+  - Solution: run update API tests with elevated permissions in this environment.
 
 ## Testing
 
 ### Manual Testing
 - [ ] Production update flow tested
 - [ ] Dev mode update flow tested
-- [ ] Settings persistence verified
-- [ ] Error handling verified
+- [x] Settings persistence verified (API-level)
+- [x] Error handling verified (service-not-configured API path)
 
 ### Verification
 - [ ] App detects new version on GitHub
 - [ ] Download progress shows correctly
 - [ ] Update applies and app restarts
 - [ ] Dev mode watcher detects local builds
-- [ ] Settings persist across restarts
+- [x] Settings persist across restarts
+- [x] Update API endpoints validated via automated test
 
 ## Files Changed
 
-_List of files added or modified._
+- `dashboard/src/main/update-manager.ts`
+- `dashboard/src/main/index.ts`
+- `dashboard/src/api-server/update-handlers.ts`
+- `dashboard/src/api-server/server.ts`
+- `dashboard/src/shared/types/update.ts`
+- `dashboard/src/renderer/src/hooks/useUpdateStatus.ts`
+- `dashboard/src/renderer/src/components/UpdateNotification.tsx`
+- `dashboard/src/renderer/src/components/UpdateProgress.tsx`
+- `dashboard/src/renderer/src/components/UpdateSettings.tsx`
+- `dashboard/src/renderer/src/components/Dashboard.tsx`
+- `dashboard/tests/update/update-api.test.ts`
+- `dashboard/electron-builder.yml`
+- `packaging/macos/build-installer.sh`
+- `.github/workflows/release-macos.yml`
 
 ## Future Improvements
 
-_Potential enhancements for future iterations._
+- Add rollback/fallback behavior for failed update apply.
+- Add targeted unit tests for version parsing/comparison and dev build metadata extraction.
+- Add release-signing/notarization validation in CI for production releases.
 
 ## References
 
