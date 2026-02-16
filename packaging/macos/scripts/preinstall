@@ -1,0 +1,26 @@
+#!/bin/bash
+# Pre-install script for MIDI Server
+# Quits the running app if it exists
+
+APP_PATH="/Applications/AudioControl/MidiServer.app"
+BUNDLE_ID="org.audiocontrol.midi-server"
+
+# Quit the app if it's running
+if pgrep -f "MidiServer.app" > /dev/null 2>&1; then
+    echo "Quitting running MidiServer..."
+    osascript -e "quit app \"MidiServer\"" 2>/dev/null || true
+
+    # Wait a moment for graceful shutdown
+    sleep 2
+
+    # Force kill if still running
+    pkill -f "MidiServer.app" 2>/dev/null || true
+fi
+
+# Remove old app to ensure clean installation
+if [ -d "$APP_PATH" ]; then
+    echo "Removing old installation at $APP_PATH..."
+    rm -rf "$APP_PATH"
+fi
+
+exit 0

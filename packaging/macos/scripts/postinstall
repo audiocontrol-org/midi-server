@@ -1,0 +1,25 @@
+#!/bin/bash
+# Post-install script for MIDI HTTP Server
+# Runs after package installation
+
+set -e
+
+INSTALL_PATH="/usr/local/bin/midi-http-server"
+
+# Ensure /usr/local/bin exists
+if [ ! -d "/usr/local/bin" ]; then
+    mkdir -p /usr/local/bin
+fi
+
+# Verify installation
+if [ -f "$INSTALL_PATH" ]; then
+    echo "midi-http-server installed successfully to $INSTALL_PATH"
+
+    # Make executable (should already be, but ensure)
+    chmod +x "$INSTALL_PATH"
+else
+    echo "Error: midi-http-server not found at $INSTALL_PATH"
+    exit 1
+fi
+
+exit 0

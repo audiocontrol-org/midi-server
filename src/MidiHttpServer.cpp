@@ -14,6 +14,7 @@
 #include "httplib.h"
 #include "JsonBuilder.h"
 #include "MidiPort.h"
+#include "VirtualMidiPort.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -38,6 +39,18 @@ public:
 
     void startServer() {
         server = std::make_unique<httplib::Server>();
+
+        // Add CORS headers to all responses
+        server->set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Headers", "Content-Type");
+        });
+
+        // Handle CORS preflight requests
+        server->Options(".*", [](const httplib::Request&, httplib::Response& res) {
+            res.status = 204;
+        });
 
         // Health check endpoint
         server->Get("/health", [this](const httplib::Request&, httplib::Response& res) {
@@ -225,10 +238,271 @@ public:
             res.set_content(json.toString(), "application/json");
         });
 
+        //==============================================================================
+        // Virtual MIDI port endpoints (for testing)
+        //==============================================================================
+
+        // List virtual ports
+        server->Get("/virtual", [this](const httplib::Request&, httplib::Response& res) {
+            std::lock_guard<std::mutex> lock(portsMutex);
+
+            JsonBuilder json;
+            json.startObject();
+
+            json.key("inputs").startArray();
+            for (const auto& [id, port] : virtualPorts) {
+                if (port->isInput()) {
+                    json.arrayValue(id);
+                }
+            }
+            json.endArray();
+
+            json.key("outputs").startArray();
+            for (const auto& [id, port] : virtualPorts) {
+                if (!port->isInput()) {
+                    json.arrayValue(id);
+                }
+            }
+            json.endArray();
+
+            json.endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
+        // Create a virtual port
+        server->Post("/virtual/:portId", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string portId = req.path_params.at("portId");
+
+            try {
+                // Parse JSON body
+                std::string name, type;
+
+                size_t namePos = req.body.find("\"name\":\"");
+                if (namePos != std::string::npos) {
+                    namePos += 8;
+                    size_t endPos = req.body.find("\"", namePos);
+                    name = req.body.substr(namePos, endPos - namePos);
+                } else {
+                    name = portId; // Use portId as name if not specified
+                }
+
+                size_t typePos = req.body.find("\"type\":\"");
+                if (typePos != std::string::npos) {
+                    typePos += 8;
+                    size_t endPos = req.body.find("\"", typePos);
+                    type = req.body.substr(typePos, endPos - typePos);
+                }
+
+                bool isInput = (type == "input");
+                auto port = std::make_unique<VirtualMidiPort>(name, isInput);
+                bool success = port->open();
+
+                if (success) {
+                    std::lock_guard<std::mutex> lock(portsMutex);
+                    virtualPorts[portId] = std::move(port);
+                }
+
+                JsonBuilder json;
+                json.startObject()
+                    .key("success").value(success)
+                    .key("name").value(name)
+                    .key("type").value(type)
+                    .endObject();
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
+        // Delete a virtual port
+        server->Delete("/virtual/:portId", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string portId = req.path_params.at("portId");
+
+            std::lock_guard<std::mutex> lock(portsMutex);
+            bool success = virtualPorts.erase(portId) > 0;
+
+            JsonBuilder json;
+            json.startObject().key("success").value(success).endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
+        // Inject a message into a virtual input port (for testing)
+        server->Post("/virtual/:portId/inject", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string portId = req.path_params.at("portId");
+
+            std::lock_guard<std::mutex> lock(portsMutex);
+            auto it = virtualPorts.find(portId);
+            if (it == virtualPorts.end()) {
+                JsonBuilder json;
+                json.startObject().key("error").value(std::string("Virtual port not found")).endObject();
+                res.status = 404;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            if (!it->second->isInput()) {
+                JsonBuilder json;
+                json.startObject().key("error").value(std::string("Can only inject into input ports")).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            try {
+                // Parse message array from JSON
+                std::vector<uint8_t> message;
+                size_t msgPos = req.body.find("\"message\":[");
+                if (msgPos != std::string::npos) {
+                    msgPos += 11;
+                    size_t endPos = req.body.find("]", msgPos);
+                    std::string msgStr = req.body.substr(msgPos, endPos - msgPos);
+
+                    std::istringstream iss(msgStr);
+                    std::string token;
+                    while (std::getline(iss, token, ',')) {
+                        if (!token.empty()) {
+                            message.push_back((uint8_t)std::stoi(token));
+                        }
+                    }
+                }
+
+                if (message.empty()) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Empty message"))
+                        .key("success").value(false)
+                        .endObject();
+                    res.status = 400;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                it->second->injectMessage(message);
+
+                JsonBuilder json;
+                json.startObject().key("success").value(true).endObject();
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
+        // Get messages from a virtual port's queue
+        server->Get("/virtual/:portId/messages", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string portId = req.path_params.at("portId");
+
+            std::lock_guard<std::mutex> lock(portsMutex);
+            auto it = virtualPorts.find(portId);
+            if (it == virtualPorts.end()) {
+                JsonBuilder json;
+                json.startObject().key("error").value(std::string("Virtual port not found")).endObject();
+                res.status = 404;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            auto messages = it->second->getMessages();
+
+            JsonBuilder json;
+            json.startObject().key("messages").startArray();
+
+            for (const auto& msg : messages) {
+                json.startArray();
+                for (uint8_t byte : msg) {
+                    json.arrayValue((int)byte);
+                }
+                json.endArray();
+            }
+
+            json.endArray().endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
+        // Send through a virtual output port
+        server->Post("/virtual/:portId/send", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string portId = req.path_params.at("portId");
+
+            std::lock_guard<std::mutex> lock(portsMutex);
+            auto it = virtualPorts.find(portId);
+            if (it == virtualPorts.end()) {
+                JsonBuilder json;
+                json.startObject().key("error").value(std::string("Virtual port not found")).endObject();
+                res.status = 404;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            if (it->second->isInput()) {
+                JsonBuilder json;
+                json.startObject().key("error").value(std::string("Can only send from output ports")).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            try {
+                // Parse message array from JSON
+                std::vector<uint8_t> message;
+                size_t msgPos = req.body.find("\"message\":[");
+                if (msgPos != std::string::npos) {
+                    msgPos += 11;
+                    size_t endPos = req.body.find("]", msgPos);
+                    std::string msgStr = req.body.substr(msgPos, endPos - msgPos);
+
+                    std::istringstream iss(msgStr);
+                    std::string token;
+                    while (std::getline(iss, token, ',')) {
+                        if (!token.empty()) {
+                            message.push_back((uint8_t)std::stoi(token));
+                        }
+                    }
+                }
+
+                if (message.empty()) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Empty message"))
+                        .key("success").value(false)
+                        .endObject();
+                    res.status = 400;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                it->second->sendMessage(message);
+
+                JsonBuilder json;
+                json.startObject().key("success").value(true).endObject();
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
         // Start server in a separate thread
         serverThread = std::thread([this]() {
-            std::cout << "HTTP Server listening on port " << serverPort << std::endl;
-            server->listen("0.0.0.0", serverPort);
+            if (serverPort == 0) {
+                // Let OS assign an available port
+                int actualPort = server->bind_to_any_port("0.0.0.0");
+                serverPort = actualPort;
+                // Print in parseable format for ProcessManager
+                std::cout << "MIDI_SERVER_PORT=" << actualPort << std::endl;
+                std::cout << "HTTP Server listening on port " << actualPort << std::endl;
+                server->listen_after_bind();
+            } else {
+                std::cout << "MIDI_SERVER_PORT=" << serverPort << std::endl;
+                std::cout << "HTTP Server listening on port " << serverPort << std::endl;
+                server->listen("0.0.0.0", serverPort);
+            }
         });
     }
 
@@ -242,6 +516,7 @@ public:
 
         std::lock_guard<std::mutex> lock(portsMutex);
         ports.clear();
+        virtualPorts.clear();
     }
 
 private:
@@ -249,6 +524,7 @@ private:
     std::unique_ptr<httplib::Server> server;
     std::thread serverThread;
     std::map<std::string, std::unique_ptr<MidiPort>> ports;
+    std::map<std::string, std::unique_ptr<VirtualMidiPort>> virtualPorts;
     std::mutex portsMutex;
 };
 

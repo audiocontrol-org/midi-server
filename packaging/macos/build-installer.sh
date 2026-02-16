@@ -1,0 +1,329 @@
+#!/bin/bash
+# Build script for macOS MIDI Server installer
+# Creates a signed and optionally notarized .pkg installer
+# Bundles the CLI binary inside the Electron app
+
+set -e
+
+# Configuration
+APP_NAME="MidiServer"
+BUNDLE_ID="org.audiocontrol.midi-server"
+APP_INSTALL_LOCATION="/Applications/AudioControl"
+MIN_MACOS_VERSION="12.0"
+
+# Paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+BUILD_DIR="$PROJECT_ROOT/build"
+DASHBOARD_DIR="$PROJECT_ROOT/dashboard"
+PKG_DIR="$PROJECT_ROOT/build/pkg"
+STAGING_DIR="$PKG_DIR/staging"
+RESOURCES_DIR="$SCRIPT_DIR/resources"
+
+# Signing identities (set via environment or arguments)
+DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
+DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
+
+# Notarization credentials (optional)
+APPLE_ID="${APPLE_ID:-}"
+APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
+APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
+
+# Flags
+SKIP_BUILD=false
+SKIP_SIGN=false
+SKIP_NOTARIZE=false
+VERSION=""
+
+usage() {
+    cat <<EOF
+Usage: $0 [options]
+
+Options:
+    --version VERSION       Set package version (reads from VERSION file if not specified)
+    --skip-build            Skip CMake and Electron build steps
+    --skip-sign             Skip code signing (for testing)
+    --skip-notarize         Skip notarization step
+    --app-identity ID       Developer ID Application identity
+    --installer-identity ID Developer ID Installer identity
+    -h, --help              Show this help
+
+Environment variables:
+    DEVELOPER_ID_APP              Developer ID Application identity
+    DEVELOPER_ID_INSTALLER        Developer ID Installer identity
+    APPLE_ID                      Apple ID for notarization
+    APPLE_TEAM_ID                 Team ID for notarization
+    APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
+EOF
+    exit 1
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --version)
+            VERSION="$2"
+            shift 2
+            ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        --skip-sign)
+            SKIP_SIGN=true
+            shift
+            ;;
+        --skip-notarize)
+            SKIP_NOTARIZE=true
+            shift
+            ;;
+        --app-identity)
+            DEVELOPER_ID_APP="$2"
+            shift 2
+            ;;
+        --installer-identity)
+            DEVELOPER_ID_INSTALLER="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+# Read version from VERSION file if not provided via argument
+if [ -z "$VERSION" ]; then
+    VERSION_FILE="$PROJECT_ROOT/VERSION"
+    if [ -f "$VERSION_FILE" ]; then
+        VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+        echo "Using version from VERSION file: $VERSION"
+    else
+        echo "Error: --version is required or VERSION file must exist"
+        usage
+    fi
+fi
+
+if [ "$SKIP_SIGN" = false ]; then
+    if [ -z "$DEVELOPER_ID_APP" ]; then
+        echo "Error: DEVELOPER_ID_APP or --app-identity is required for signing"
+        exit 1
+    fi
+    if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
+        echo "Error: DEVELOPER_ID_INSTALLER or --installer-identity is required for signing"
+        exit 1
+    fi
+fi
+
+echo "=== Building MIDI Server Installer v$VERSION ==="
+echo "Project root: $PROJECT_ROOT"
+
+# Sync version to package.json (single source of truth is VERSION file)
+echo ""
+echo "Syncing version $VERSION to dashboard/package.json..."
+cd "$DASHBOARD_DIR"
+npm pkg set version="$VERSION"
+
+# Step 1: Build the CLI binary (needed before Electron build for bundling)
+if [ "$SKIP_BUILD" = false ]; then
+    echo ""
+    echo "=== Step 1: Building MIDI HTTP Server (C++) ==="
+    cd "$PROJECT_ROOT"
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="$MIN_MACOS_VERSION"
+    cmake --build build --config Release
+else
+    echo ""
+    echo "=== Step 1: Skipping C++ build (--skip-build) ==="
+fi
+
+# Verify CLI binary exists (electron-builder will bundle it)
+CLI_BINARY="$BUILD_DIR/MidiHttpServer_artefacts/Release/MidiHttpServer"
+if [ ! -f "$CLI_BINARY" ]; then
+    echo "Error: CLI binary not found at $CLI_BINARY"
+    exit 1
+fi
+echo "Found CLI binary: $CLI_BINARY"
+
+# Step 2: Build the Electron app (includes CLI via extraResources)
+if [ "$SKIP_BUILD" = false ]; then
+    echo ""
+    echo "=== Step 2: Building Electron App (with bundled CLI) ==="
+    cd "$DASHBOARD_DIR"
+    npm install
+    npm run build
+    npx electron-builder --mac --dir
+else
+    echo ""
+    echo "=== Step 2: Skipping Electron build (--skip-build) ==="
+fi
+
+# Find the built Electron app
+ELECTRON_APP_PATH=$(find "$DASHBOARD_DIR/dist" -name "*.app" -type d 2>/dev/null | head -1)
+if [ -z "$ELECTRON_APP_PATH" ] || [ ! -d "$ELECTRON_APP_PATH" ]; then
+    echo "Error: Electron app not found in $DASHBOARD_DIR/dist"
+    exit 1
+fi
+echo "Found Electron app: $ELECTRON_APP_PATH"
+
+# Verify CLI was bundled
+BUNDLED_CLI="$ELECTRON_APP_PATH/Contents/Resources/bin/midi-http-server"
+if [ ! -f "$BUNDLED_CLI" ]; then
+    echo "Error: CLI binary not bundled in app at $BUNDLED_CLI"
+    exit 1
+fi
+echo "CLI bundled at: $BUNDLED_CLI"
+
+# Step 3: Create staging directory
+echo ""
+echo "=== Step 3: Creating staging directory ==="
+rm -rf "$PKG_DIR"
+mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION"
+
+# Copy Electron app (with bundled CLI)
+cp -R "$ELECTRON_APP_PATH" "$STAGING_DIR$APP_INSTALL_LOCATION/"
+STAGED_APP="$STAGING_DIR$APP_INSTALL_LOCATION/$(basename "$ELECTRON_APP_PATH")"
+echo "Staged App: $STAGED_APP"
+
+# Step 4: Sign the app
+if [ "$SKIP_SIGN" = false ]; then
+    echo ""
+    echo "=== Step 4: Signing App ==="
+
+    # Sign the bundled CLI binary
+    echo "Signing bundled CLI..."
+    codesign --sign "$DEVELOPER_ID_APP" \
+        --options runtime \
+        --entitlements "$SCRIPT_DIR/entitlements.plist" \
+        --timestamp \
+        --force \
+        "$STAGED_APP/Contents/Resources/bin/midi-http-server"
+
+    # Sign the main app bundle (deep signs all nested components)
+    echo "Signing app bundle..."
+    codesign --sign "$DEVELOPER_ID_APP" \
+        --options runtime \
+        --entitlements "$DASHBOARD_DIR/build/entitlements.mac.plist" \
+        --timestamp \
+        --force \
+        --deep \
+        "$STAGED_APP"
+
+    echo "Verifying signature..."
+    codesign --verify --verbose=2 "$STAGED_APP"
+else
+    echo ""
+    echo "=== Step 4: Skipping signing (--skip-sign) ==="
+fi
+
+# Step 5: Create installer package
+echo ""
+echo "=== Step 5: Creating installer package ==="
+
+COMPONENT_PKG="$PKG_DIR/$APP_NAME-component.pkg"
+pkgbuild \
+    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+    --identifier "$BUNDLE_ID" \
+    --version "$VERSION" \
+    --install-location "$APP_INSTALL_LOCATION" \
+    --scripts "$SCRIPT_DIR/scripts" \
+    "$COMPONENT_PKG"
+echo "Created: $COMPONENT_PKG"
+
+# Step 6: Create distribution package
+echo ""
+echo "=== Step 6: Creating distribution package ==="
+
+# Create simplified distribution.xml for single-app install
+DIST_XML="$PKG_DIR/distribution.xml"
+cat > "$DIST_XML" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>MIDI Server</title>
+    <organization>org.audiocontrol</organization>
+    <domains enable_localSystem="true" enable_currentUserHome="false"/>
+    <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="$MIN_MACOS_VERSION"/>
+        </allowed-os-versions>
+    </volume-check>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="$BUNDLE_ID"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="$BUNDLE_ID" visible="false" title="MIDI Server">
+        <pkg-ref id="$BUNDLE_ID"/>
+    </choice>
+    <pkg-ref id="$BUNDLE_ID" version="$VERSION" onConclusion="none">$APP_NAME-component.pkg</pkg-ref>
+</installer-gui-script>
+EOF
+
+UNSIGNED_PKG="$PKG_DIR/$APP_NAME-$VERSION-unsigned.pkg"
+FINAL_PKG="$PKG_DIR/$APP_NAME-$VERSION.pkg"
+
+productbuild \
+    --distribution "$DIST_XML" \
+    --package-path "$PKG_DIR" \
+    --resources "$RESOURCES_DIR" \
+    "$UNSIGNED_PKG"
+
+echo "Created: $UNSIGNED_PKG"
+
+# Step 7: Sign the installer
+if [ "$SKIP_SIGN" = false ]; then
+    echo ""
+    echo "=== Step 7: Signing installer ==="
+    productsign \
+        --sign "$DEVELOPER_ID_INSTALLER" \
+        --timestamp \
+        "$UNSIGNED_PKG" \
+        "$FINAL_PKG"
+
+    rm "$UNSIGNED_PKG"
+
+    echo "Verifying installer signature..."
+    pkgutil --check-signature "$FINAL_PKG"
+else
+    echo ""
+    echo "=== Step 7: Skipping installer signing (--skip-sign) ==="
+    mv "$UNSIGNED_PKG" "$FINAL_PKG"
+fi
+
+# Step 8: Notarize
+if [ "$SKIP_SIGN" = false ] && [ "$SKIP_NOTARIZE" = false ]; then
+    if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+        echo ""
+        echo "=== Step 8: Notarizing installer ==="
+        xcrun notarytool submit "$FINAL_PKG" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "$FINAL_PKG"
+
+        echo "Verifying notarization..."
+        spctl --assess -vv --type install "$FINAL_PKG"
+    else
+        echo ""
+        echo "=== Step 8: Skipping notarization (credentials not provided) ==="
+    fi
+else
+    echo ""
+    echo "=== Step 8: Skipping notarization ==="
+fi
+
+echo ""
+echo "=== Build complete ==="
+echo "Installer: $FINAL_PKG"
+echo "Installs to: $APP_INSTALL_LOCATION/$APP_NAME.app"
+echo "CLI available at: $APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
+ls -lh "$FINAL_PKG"

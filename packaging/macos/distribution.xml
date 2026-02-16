@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>MIDI HTTP Server</title>
+    <organization>org.audiocontrol</organization>
+    <domains enable_localSystem="true" enable_currentUserHome="false"/>
+
+    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+
+    <!-- Minimum macOS version -->
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="12.0"/>
+        </allowed-os-versions>
+    </volume-check>
+
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="org.audiocontrol.midi-http-server"/>
+            <line choice="org.audiocontrol.midi-server-dashboard"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+
+    <choice id="org.audiocontrol.midi-http-server"
+            visible="false"
+            title="MIDI HTTP Server CLI"
+            description="HTTP-to-MIDI bridge server command-line tool">
+        <pkg-ref id="org.audiocontrol.midi-http-server"/>
+    </choice>
+
+    <choice id="org.audiocontrol.midi-server-dashboard"
+            visible="false"
+            title="MIDI Server Dashboard"
+            description="Desktop application for managing the MIDI server">
+        <pkg-ref id="org.audiocontrol.midi-server-dashboard"/>
+    </choice>
+
+    <pkg-ref id="org.audiocontrol.midi-http-server"
+             version="0.0.0"
+             onConclusion="none">midi-http-server-cli.pkg</pkg-ref>
+
+    <pkg-ref id="org.audiocontrol.midi-server-dashboard"
+             version="0.0.0"
+             onConclusion="none">midi-http-server-dashboard.pkg</pkg-ref>
+</installer-gui-script>
