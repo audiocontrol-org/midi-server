@@ -7,6 +7,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DASHBOARD_DIR="$PROJECT_ROOT/dashboard"
 VERSION_FILE="$PROJECT_ROOT/VERSION"
 RELEASE_CONFIG_FILE="$SCRIPT_DIR/release.config.sh"
+RELEASE_SECRETS_HELPER="$SCRIPT_DIR/release-secrets.sh"
 
 die() {
     echo "Error: $*" >&2
@@ -84,3 +85,9 @@ load_release_config() {
 }
 
 load_release_config
+
+if [ -f "$RELEASE_SECRETS_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$RELEASE_SECRETS_HELPER"
+    load_release_secrets
+fi

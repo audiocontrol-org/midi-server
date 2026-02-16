@@ -20,10 +20,16 @@ PKG_DIR="$PROJECT_ROOT/build/pkg"
 STAGING_DIR="$PKG_DIR/staging"
 RESOURCES_DIR="$SCRIPT_DIR/resources"
 RELEASE_CONFIG_FILE="$SCRIPT_DIR/release.config.sh"
+RELEASE_SECRETS_HELPER="$SCRIPT_DIR/release-secrets.sh"
 
 if [ -f "$RELEASE_CONFIG_FILE" ]; then
     # shellcheck disable=SC1090
     source "$RELEASE_CONFIG_FILE"
+fi
+if [ -f "$RELEASE_SECRETS_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$RELEASE_SECRETS_HELPER"
+    load_release_secrets
 fi
 
 # Signing identities (set via environment or arguments)
@@ -86,6 +92,8 @@ Environment variables:
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
     
 Defaults are loaded from packaging/macos/release.config.sh when present.
+Encrypted notarization secrets are loaded from ~/.config/audiocontrol.org/midi-server/release.secrets.enc
+when RELEASE_SECRETS_PASSWORD is set.
 EOF
     exit 1
 }
@@ -246,6 +254,10 @@ cp -R "$ELECTRON_APP_PATH" "$STAGING_DIR$APP_INSTALL_LOCATION/"
 STAGED_APP="$STAGING_DIR$APP_INSTALL_LOCATION/$(basename "$ELECTRON_APP_PATH")"
 echo "Staged App: $STAGED_APP"
 
+# Avoid AppleDouble metadata files (._*) in package payload; these can break
+# code signature validation during notarization.
+xattr -cr "$STAGED_APP" || true
+
 # Step 4: Sign the app
 if [ "$SKIP_SIGN" = false ]; then
     echo ""
@@ -284,6 +296,9 @@ echo "=== Step 5: Creating installer package ==="
 COMPONENT_PKG="$PKG_DIR/$APP_NAME-component.pkg"
 COMPONENT_PLIST="$PKG_DIR/component.plist"
 
+# Prevent AppleDouble files from being generated in package archives.
+export COPYFILE_DISABLE=1
+
 # Prevent PackageKit from relocating the app to previously moved/staging paths.
 pkgbuild \
     --analyze \
@@ -292,14 +307,26 @@ pkgbuild \
 
 /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST" >/dev/null
 
-pkgbuild \
-    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
-    --identifier "$BUNDLE_ID" \
-    --version "$VERSION" \
-    --install-location "$APP_INSTALL_LOCATION" \
-    --component-plist "$COMPONENT_PLIST" \
-    --scripts "$SCRIPT_DIR/scripts" \
-    "$COMPONENT_PKG"
+if [ "$SKIP_SIGN" = false ]; then
+    pkgbuild \
+        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --identifier "$BUNDLE_ID" \
+        --version "$VERSION" \
+        --install-location "$APP_INSTALL_LOCATION" \
+        --component-plist "$COMPONENT_PLIST" \
+        --scripts "$SCRIPT_DIR/scripts" \
+        --sign "$DEVELOPER_ID_INSTALLER" \
+        "$COMPONENT_PKG"
+else
+    pkgbuild \
+        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --identifier "$BUNDLE_ID" \
+        --version "$VERSION" \
+        --install-location "$APP_INSTALL_LOCATION" \
+        --component-plist "$COMPONENT_PLIST" \
+        --scripts "$SCRIPT_DIR/scripts" \
+        "$COMPONENT_PKG"
+fi
 echo "Created: $COMPONENT_PKG"
 
 # Step 6: Create distribution package

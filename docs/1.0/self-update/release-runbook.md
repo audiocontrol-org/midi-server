@@ -29,11 +29,36 @@ This includes certificate names and repo metadata:
 - `APPLE_TEAM_ID_DEFAULT`
 - `RELEASE_GH_REPO`
 
-## Environment Variables (Secrets Only)
+## Encrypted Local Secret Store (Recommended)
+
+Store notarization secrets locally in:
+
+- `~/.config/audiocontrol.org/midi-server/release.secrets.enc`
+
+Initialize/update encrypted secrets:
+
+```bash
+./packaging/macos/release-secrets-init.sh
+```
+
+Set one runtime password in your shell:
+
+```bash
+export RELEASE_SECRETS_PASSWORD="<your-encryption-password>"
+```
+
+Release scripts will decrypt and load:
+
+- `APPLE_ID`
+- `APPLE_TEAM_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+
+## Environment Variables (Direct, Optional)
 
 ```bash
 export APPLE_ID="<apple-id-email>"
 export APPLE_APP_SPECIFIC_PASSWORD="<app-specific-password>"
+export APPLE_TEAM_ID="ES3R29MZ5A"
 ```
 
 ## Discrete Commands

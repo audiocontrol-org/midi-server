@@ -55,6 +55,10 @@ else
 fi
 
 info "Building artifacts for v$VERSION"
-"$SCRIPT_DIR/build-installer.sh" --version "$VERSION" "${PASS_THROUGH_ARGS[@]}"
+if [ ${#PASS_THROUGH_ARGS[@]} -gt 0 ]; then
+    "$SCRIPT_DIR/build-installer.sh" --version "$VERSION" "${PASS_THROUGH_ARGS[@]}"
+else
+    "$SCRIPT_DIR/build-installer.sh" --version "$VERSION"
+fi
 
 info "Build completed for v$VERSION"
