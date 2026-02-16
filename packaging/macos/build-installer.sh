@@ -276,7 +276,7 @@ if [ "$SKIP_SIGN" = false ]; then
     echo "Signing app bundle..."
     codesign --sign "$DEVELOPER_ID_APP" \
         --options runtime \
-        --entitlements "$DASHBOARD_DIR/build/entitlements.mac.plist" \
+        --entitlements "$SCRIPT_DIR/entitlements.plist" \
         --timestamp \
         --force \
         --deep \
