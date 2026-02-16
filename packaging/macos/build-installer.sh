@@ -209,8 +209,14 @@ echo "CLI bundled at: $BUNDLED_CLI"
 
 # Verify update artifacts for electron-updater
 LATEST_MANIFEST=$(find "$DASHBOARD_DIR/dist" -name "latest-mac*.yml" -type f 2>/dev/null | head -1)
-ZIP_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-mac.zip" -type f 2>/dev/null | head -1)
-DMG_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*.dmg" -type f 2>/dev/null | head -1)
+ZIP_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-$VERSION*-mac.zip" -type f 2>/dev/null | head -1)
+if [ -z "$ZIP_ARTIFACT" ]; then
+    ZIP_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-mac.zip" -type f 2>/dev/null | head -1)
+fi
+DMG_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*-$VERSION*.dmg" -type f 2>/dev/null | head -1)
+if [ -z "$DMG_ARTIFACT" ]; then
+    DMG_ARTIFACT=$(find "$DASHBOARD_DIR/dist" -name "*.dmg" -type f 2>/dev/null | head -1)
+fi
 
 if [ -z "$LATEST_MANIFEST" ] || [ ! -f "$LATEST_MANIFEST" ]; then
     echo "Error: latest-mac manifest not found in $DASHBOARD_DIR/dist"
