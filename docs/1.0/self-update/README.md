@@ -18,6 +18,7 @@ Create a self-updating launcher that, once installed, can automatically detect, 
 | [implementation-summary.md](./implementation-summary.md) | Post-completion report |
 | [manual-test-checklist.md](./manual-test-checklist.md) | End-to-end validation steps |
 | [release-runbook.md](./release-runbook.md) | Scripted release process (discrete + one-click) |
+| [installer-signing-test-plan.md](./installer-signing-test-plan.md) | Systematic CI plan for installer-signing diagnosis |
 
 ## Progress
 
