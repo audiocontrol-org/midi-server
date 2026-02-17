@@ -301,15 +301,30 @@ COMPONENT_PLIST="$PKG_DIR/component.plist"
 # Prevent AppleDouble files from being generated in package archives.
 export COPYFILE_DISABLE=1
 
-# Prevent PackageKit from relocating the app to previously moved/staging paths.
-pkgbuild \
-    --analyze \
-    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
-    "$COMPONENT_PLIST"
-
-/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST" >/dev/null
+# Generate component plist directly so CI does not depend on pkgbuild --analyze.
+cat > "$COMPONENT_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>RootRelativeBundlePath</key>
+    <string>$APP_NAME.app</string>
+    <key>BundleIsRelocatable</key>
+    <false/>
+    <key>BundleIsVersionChecked</key>
+    <true/>
+    <key>BundleHasStrictIdentifier</key>
+    <false/>
+    <key>BundleOverwriteAction</key>
+    <string>upgrade</string>
+  </dict>
+</array>
+</plist>
+EOF
 
 if [ "$SKIP_SIGN" = false ]; then
+    echo "Running pkgbuild (signed component package)..."
     pkgbuild \
         --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
         --identifier "$BUNDLE_ID" \
@@ -320,6 +335,7 @@ if [ "$SKIP_SIGN" = false ]; then
         --sign "$DEVELOPER_ID_INSTALLER" \
         "$COMPONENT_PKG"
 else
+    echo "Running pkgbuild (unsigned component package)..."
     pkgbuild \
         --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
         --identifier "$BUNDLE_ID" \
