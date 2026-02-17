@@ -12,6 +12,7 @@ DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-180}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
 PROBE_SIGN_TARGET="${PROBE_SIGN_TARGET:-distribution}"
+PROBE_USE_COMPONENT_PLIST="${PROBE_USE_COMPONENT_PLIST:-true}"
 
 if [ -z "$DEVELOPER_ID_APP" ] || [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_APP and DEVELOPER_ID_INSTALLER are required." >&2
@@ -20,6 +21,10 @@ fi
 
 if [ "$PROBE_SIGN_TARGET" != "distribution" ] && [ "$PROBE_SIGN_TARGET" != "component" ]; then
     echo "Error: PROBE_SIGN_TARGET must be 'distribution' or 'component'." >&2
+    exit 1
+fi
+if [ "$PROBE_USE_COMPONENT_PLIST" != "true" ] && [ "$PROBE_USE_COMPONENT_PLIST" != "false" ]; then
+    echo "Error: PROBE_USE_COMPONENT_PLIST must be 'true' or 'false'." >&2
     exit 1
 fi
 
@@ -118,13 +123,22 @@ cat > "$COMPONENT_PLIST" <<EOF
 EOF
 
 echo "==> Running pkgbuild (unsigned component package)"
-pkgbuild \
-    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
-    --identifier "$BUNDLE_ID" \
-    --version "0.0.0" \
-    --install-location "$APP_INSTALL_LOCATION" \
-    --component-plist "$COMPONENT_PLIST" \
-    "$COMPONENT_PKG"
+if [ "$PROBE_USE_COMPONENT_PLIST" = true ]; then
+    pkgbuild \
+        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --identifier "$BUNDLE_ID" \
+        --version "0.0.0" \
+        --install-location "$APP_INSTALL_LOCATION" \
+        --component-plist "$COMPONENT_PLIST" \
+        "$COMPONENT_PKG"
+else
+    pkgbuild \
+        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --identifier "$BUNDLE_ID" \
+        --version "0.0.0" \
+        --install-location "$APP_INSTALL_LOCATION" \
+        "$COMPONENT_PKG"
+fi
 
 echo "==> Running productbuild"
 cat > "$DIST_XML" <<EOF

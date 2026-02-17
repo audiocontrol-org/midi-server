@@ -18,6 +18,11 @@ on:
         required: false
         default: "distribution"
         type: string
+      use_component_plist:
+        description: "Use pkgbuild --component-plist"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -91,3 +96,4 @@ jobs:
           PRODUCTSIGN_TIMEOUT_SECONDS: ${{ inputs.productsign_timeout_seconds || '180' }}
           PRODUCTSIGN_USE_TIMESTAMP: ${{ inputs.use_timestamp && 'true' || 'false' }}
           PROBE_SIGN_TARGET: ${{ inputs.sign_target || 'distribution' }}
+          PROBE_USE_COMPONENT_PLIST: ${{ inputs.use_component_plist && 'true' || 'false' }}
