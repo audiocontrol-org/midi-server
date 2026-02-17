@@ -40,6 +40,7 @@ DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 APPLE_ID="${APPLE_ID:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
+NOTARY_WAIT_TIMEOUT="${NOTARY_WAIT_TIMEOUT:-20m}"
 CSC_NAME="${CSC_NAME:-}"
 CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-}"
 
@@ -90,6 +91,7 @@ Environment variables:
     APPLE_ID                      Apple ID for notarization
     APPLE_TEAM_ID                 Team ID for notarization
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
+    NOTARY_WAIT_TIMEOUT           Timeout for notarytool --wait (default: 20m)
     
 Defaults are loaded from packaging/macos/release.config.sh when present.
 Encrypted notarization secrets are loaded from ~/.config/audiocontrol.org/midi-server/release.secrets.enc
@@ -402,6 +404,7 @@ if [ "$SKIP_SIGN" = false ] && [ "$SKIP_NOTARIZE" = false ]; then
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --timeout "$NOTARY_WAIT_TIMEOUT" \
             --wait
 
         echo "Stapling notarization ticket..."
