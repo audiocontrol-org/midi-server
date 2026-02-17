@@ -41,6 +41,8 @@ APPLE_ID="${APPLE_ID:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
 NOTARY_WAIT_TIMEOUT="${NOTARY_WAIT_TIMEOUT:-20m}"
+PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-600}"
+PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
 CSC_NAME="${CSC_NAME:-}"
 CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-}"
 
@@ -92,12 +94,21 @@ Environment variables:
     APPLE_TEAM_ID                 Team ID for notarization
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
     NOTARY_WAIT_TIMEOUT           Timeout for notarytool --wait (default: 20m)
+    PRODUCTSIGN_TIMEOUT_SECONDS   Timeout in seconds for productsign (default: 600)
+    PRODUCTSIGN_USE_TIMESTAMP     Set to true to add --timestamp when running productsign
     
 Defaults are loaded from packaging/macos/release.config.sh when present.
 Encrypted notarization secrets are loaded from ~/.config/audiocontrol.org/midi-server/release.secrets.enc
 when RELEASE_SECRETS_PASSWORD is set.
 EOF
     exit 1
+}
+
+run_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+    perl -e 'my $t=shift @ARGV; alarm($t); exec @ARGV or die "exec failed: $!";' \
+        "$timeout_seconds" "$@"
 }
 
 # Parse arguments
@@ -382,11 +393,19 @@ echo "Created: $UNSIGNED_PKG"
 if [ "$SKIP_SIGN" = false ]; then
     echo ""
     echo "=== Step 7: Signing installer ==="
-    productsign \
-        --sign "$DEVELOPER_ID_INSTALLER" \
-        --timestamp \
-        "$UNSIGNED_PKG" \
+    PRODUCTSIGN_ARGS=(
+        --sign "$DEVELOPER_ID_INSTALLER"
+    )
+    if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
+        PRODUCTSIGN_ARGS+=(--timestamp)
+    fi
+    PRODUCTSIGN_ARGS+=(
+        "$UNSIGNED_PKG"
         "$FINAL_PKG"
+    )
+
+    echo "Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})..."
+    run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
     rm "$UNSIGNED_PKG"
 

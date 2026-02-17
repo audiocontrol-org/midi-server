@@ -133,3 +133,18 @@ Optional overrides (otherwise defaults from `release.config.sh` are used):
 
 - `.github/workflows/release-preflight.yml` runs fast checks on PRs/pushes that touch release files.
 - `.github/workflows/release-macos.yml` runs a fail-fast preflight step before certificate import and notarized build steps.
+
+## Fast Sign-Only CI Loop
+
+Use `.github/workflows/installer-sign-smoke.yml` to debug installer signing quickly.
+It does not build app code. It only:
+
+- imports the installer certificate
+- builds a dummy installer payload
+- runs `productsign`
+- verifies signature with `pkgutil --check-signature`
+
+You can run it from GitHub Actions with optional inputs:
+
+- `use_timestamp` (`true`/`false`)
+- `productsign_timeout_seconds` (default `180`)
