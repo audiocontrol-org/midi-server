@@ -106,3 +106,26 @@ Preliminary inference:
 
 - Raw cert import + `productsign` path works reliably in lightweight conditions.
 - Remaining failures are likely in packaging-path specifics (payload/package construction flow), not basic signer availability.
+
+Package-path probe results:
+
+| Test ID | Result | Notes |
+|---|---|---|
+| R1-a | Fail | `sign_target=distribution`, `use_timestamp=false`, `use_component_plist=true`, run `22113629699` |
+| R2-a | Fail | `sign_target=distribution`, `use_timestamp=true`, `use_component_plist=true`, run `22113774503` |
+| R1-b | Fail | `sign_target=component`, `use_timestamp=false`, `use_component_plist=true`, run `22113925789` |
+| R1-c | Fail | `sign_target=component`, `use_timestamp=false`, `use_component_plist=false`, run `22114548298` |
+
+Observed failure boundary:
+
+- `pkgbuild` completes quickly.
+- `productbuild` completes quickly.
+- `productsign` hangs until probe timeout, even with:
+  - timestamp off
+  - timestamp on
+  - component plist enabled/disabled
+  - component-vs-distribution sign target
+
+Current strongest hypothesis:
+
+- The trigger is signing pkgs whose payload includes an `.app` bundle (not signer/certificate import itself).
