@@ -28,6 +28,11 @@ on:
         required: false
         default: "app"
         type: string
+      run_productbuild:
+        description: "Run productbuild before productsign"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -103,3 +108,4 @@ jobs:
           PROBE_SIGN_TARGET: ${{ inputs.sign_target || 'distribution' }}
           PROBE_USE_COMPONENT_PLIST: ${{ inputs.use_component_plist && 'true' || 'false' }}
           PROBE_PAYLOAD_TYPE: ${{ inputs.payload_type || 'app' }}
+          PROBE_RUN_PRODUCTBUILD: ${{ inputs.run_productbuild && 'true' || 'false' }}
