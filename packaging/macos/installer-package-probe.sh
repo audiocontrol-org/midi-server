@@ -14,6 +14,7 @@ PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
 PROBE_SIGN_TARGET="${PROBE_SIGN_TARGET:-distribution}"
 PROBE_USE_COMPONENT_PLIST="${PROBE_USE_COMPONENT_PLIST:-true}"
 PROBE_PAYLOAD_TYPE="${PROBE_PAYLOAD_TYPE:-app}"
+PROBE_RUN_PRODUCTBUILD="${PROBE_RUN_PRODUCTBUILD:-true}"
 
 if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_INSTALLER is required." >&2
@@ -34,6 +35,10 @@ if [ "$PROBE_USE_COMPONENT_PLIST" != "true" ] && [ "$PROBE_USE_COMPONENT_PLIST" 
 fi
 if [ "$PROBE_PAYLOAD_TYPE" != "app" ] && [ "$PROBE_PAYLOAD_TYPE" != "flat" ]; then
     echo "Error: PROBE_PAYLOAD_TYPE must be 'app' or 'flat'." >&2
+    exit 1
+fi
+if [ "$PROBE_RUN_PRODUCTBUILD" != "true" ] && [ "$PROBE_RUN_PRODUCTBUILD" != "false" ]; then
+    echo "Error: PROBE_RUN_PRODUCTBUILD must be 'true' or 'false'." >&2
     exit 1
 fi
 
@@ -164,6 +169,7 @@ else
 fi
 
 echo "==> Running productbuild"
+if [ "$PROBE_RUN_PRODUCTBUILD" = true ]; then
 cat > "$DIST_XML" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
@@ -191,11 +197,14 @@ cat > "$DIST_XML" <<EOF
 </installer-gui-script>
 EOF
 
-productbuild \
-    --distribution "$DIST_XML" \
-    --package-path "$PKG_DIR" \
-    --resources "$RESOURCES_DIR" \
-    "$UNSIGNED_PKG"
+    productbuild \
+        --distribution "$DIST_XML" \
+        --package-path "$PKG_DIR" \
+        --resources "$RESOURCES_DIR" \
+        "$UNSIGNED_PKG"
+else
+    echo "==> Skipping productbuild (PROBE_RUN_PRODUCTBUILD=false)"
+fi
 
 PRODUCTSIGN_ARGS=(
     --sign "$DEVELOPER_ID_INSTALLER"
@@ -222,6 +231,10 @@ if [ "$PROBE_SIGN_TARGET" = "component" ]; then
 fi
 
 echo "==> Running productsign (target: ${PROBE_SIGN_TARGET}, timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
+if [ "$PROBE_SIGN_TARGET" = "distribution" ] && [ "$PROBE_RUN_PRODUCTBUILD" != true ]; then
+    echo "Error: distribution signing requires PROBE_RUN_PRODUCTBUILD=true." >&2
+    exit 1
+fi
 run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
 echo "==> Verifying final installer signature"
