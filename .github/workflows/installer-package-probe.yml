@@ -23,6 +23,11 @@ on:
         required: false
         default: true
         type: boolean
+      payload_type:
+        description: "Probe payload type (app|flat)"
+        required: false
+        default: "app"
+        type: string
 
 permissions:
   contents: read
@@ -97,3 +102,4 @@ jobs:
           PRODUCTSIGN_USE_TIMESTAMP: ${{ inputs.use_timestamp && 'true' || 'false' }}
           PROBE_SIGN_TARGET: ${{ inputs.sign_target || 'distribution' }}
           PROBE_USE_COMPONENT_PLIST: ${{ inputs.use_component_plist && 'true' || 'false' }}
+          PROBE_PAYLOAD_TYPE: ${{ inputs.payload_type || 'app' }}
