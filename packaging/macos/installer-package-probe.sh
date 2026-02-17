@@ -13,9 +13,14 @@ PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-180}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
 PROBE_SIGN_TARGET="${PROBE_SIGN_TARGET:-distribution}"
 PROBE_USE_COMPONENT_PLIST="${PROBE_USE_COMPONENT_PLIST:-true}"
+PROBE_PAYLOAD_TYPE="${PROBE_PAYLOAD_TYPE:-app}"
 
-if [ -z "$DEVELOPER_ID_APP" ] || [ -z "$DEVELOPER_ID_INSTALLER" ]; then
-    echo "Error: DEVELOPER_ID_APP and DEVELOPER_ID_INSTALLER are required." >&2
+if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
+    echo "Error: DEVELOPER_ID_INSTALLER is required." >&2
+    exit 1
+fi
+if [ "$PROBE_PAYLOAD_TYPE" = "app" ] && [ -z "$DEVELOPER_ID_APP" ]; then
+    echo "Error: DEVELOPER_ID_APP is required when PROBE_PAYLOAD_TYPE=app." >&2
     exit 1
 fi
 
@@ -25,6 +30,10 @@ if [ "$PROBE_SIGN_TARGET" != "distribution" ] && [ "$PROBE_SIGN_TARGET" != "comp
 fi
 if [ "$PROBE_USE_COMPONENT_PLIST" != "true" ] && [ "$PROBE_USE_COMPONENT_PLIST" != "false" ]; then
     echo "Error: PROBE_USE_COMPONENT_PLIST must be 'true' or 'false'." >&2
+    exit 1
+fi
+if [ "$PROBE_PAYLOAD_TYPE" != "app" ] && [ "$PROBE_PAYLOAD_TYPE" != "flat" ]; then
+    echo "Error: PROBE_PAYLOAD_TYPE must be 'app' or 'flat'." >&2
     exit 1
 fi
 
@@ -46,12 +55,13 @@ DIST_XML="$PKG_DIR/distribution.xml"
 UNSIGNED_PKG="$PKG_DIR/$APP_NAME-probe-unsigned.pkg"
 FINAL_PKG="$PKG_DIR/$APP_NAME-probe.pkg"
 
-echo "==> Preparing dummy app payload"
+echo "==> Preparing probe payload (type: ${PROBE_PAYLOAD_TYPE})"
 rm -rf "$WORK_DIR"
-mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin"
-mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS"
+if [ "$PROBE_PAYLOAD_TYPE" = "app" ]; then
+    mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin"
+    mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS"
 
-cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Info.plist" <<EOF
+    cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -72,32 +82,38 @@ cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Info.plist" <<EO
 </plist>
 EOF
 
-cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS/MidiServer" <<EOF
+    cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS/MidiServer" <<EOF
 #!/bin/bash
 exit 0
 EOF
-chmod +x "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS/MidiServer"
+    chmod +x "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS/MidiServer"
 
-cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server" <<EOF
+    cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server" <<EOF
 #!/bin/bash
 echo "probe"
 EOF
-chmod +x "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
-xattr -cr "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app" || true
+    chmod +x "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
+    xattr -cr "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app" || true
 
-echo "==> Signing dummy app payload"
-codesign --sign "$DEVELOPER_ID_APP" \
-    --options runtime \
-    --timestamp \
-    --force \
-    "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
-codesign --sign "$DEVELOPER_ID_APP" \
-    --options runtime \
-    --timestamp \
-    --force \
-    --deep \
-    "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app"
-codesign --verify --verbose=2 "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app"
+    echo "==> Signing dummy app payload"
+    codesign --sign "$DEVELOPER_ID_APP" \
+        --options runtime \
+        --timestamp \
+        --force \
+        "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
+    codesign --sign "$DEVELOPER_ID_APP" \
+        --options runtime \
+        --timestamp \
+        --force \
+        --deep \
+        "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app"
+    codesign --verify --verbose=2 "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app"
+else
+    mkdir -p "$STAGING_DIR/usr/local/share/midi-server-probe"
+    cat > "$STAGING_DIR/usr/local/share/midi-server-probe/README.txt" <<EOF
+MIDI Server probe payload.
+EOF
+fi
 
 echo "==> Creating component plist"
 mkdir -p "$PKG_DIR"
@@ -123,20 +139,27 @@ cat > "$COMPONENT_PLIST" <<EOF
 EOF
 
 echo "==> Running pkgbuild (unsigned component package)"
-if [ "$PROBE_USE_COMPONENT_PLIST" = true ]; then
+PKGBUILD_ROOT="$STAGING_DIR$APP_INSTALL_LOCATION"
+PKGBUILD_INSTALL_LOCATION="$APP_INSTALL_LOCATION"
+if [ "$PROBE_PAYLOAD_TYPE" = "flat" ]; then
+    PKGBUILD_ROOT="$STAGING_DIR"
+    PKGBUILD_INSTALL_LOCATION="/"
+fi
+
+if [ "$PROBE_PAYLOAD_TYPE" = "app" ] && [ "$PROBE_USE_COMPONENT_PLIST" = true ]; then
     pkgbuild \
-        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --root "$PKGBUILD_ROOT" \
         --identifier "$BUNDLE_ID" \
         --version "0.0.0" \
-        --install-location "$APP_INSTALL_LOCATION" \
+        --install-location "$PKGBUILD_INSTALL_LOCATION" \
         --component-plist "$COMPONENT_PLIST" \
         "$COMPONENT_PKG"
 else
     pkgbuild \
-        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+        --root "$PKGBUILD_ROOT" \
         --identifier "$BUNDLE_ID" \
         --version "0.0.0" \
-        --install-location "$APP_INSTALL_LOCATION" \
+        --install-location "$PKGBUILD_INSTALL_LOCATION" \
         "$COMPONENT_PKG"
 fi
 
