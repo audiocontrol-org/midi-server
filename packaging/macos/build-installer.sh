@@ -323,28 +323,15 @@ cat > "$COMPONENT_PLIST" <<EOF
 </plist>
 EOF
 
-if [ "$SKIP_SIGN" = false ]; then
-    echo "Running pkgbuild (signed component package)..."
-    pkgbuild \
-        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
-        --identifier "$BUNDLE_ID" \
-        --version "$VERSION" \
-        --install-location "$APP_INSTALL_LOCATION" \
-        --component-plist "$COMPONENT_PLIST" \
-        --scripts "$SCRIPT_DIR/scripts" \
-        --sign "$DEVELOPER_ID_INSTALLER" \
-        "$COMPONENT_PKG"
-else
-    echo "Running pkgbuild (unsigned component package)..."
-    pkgbuild \
-        --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
-        --identifier "$BUNDLE_ID" \
-        --version "$VERSION" \
-        --install-location "$APP_INSTALL_LOCATION" \
-        --component-plist "$COMPONENT_PLIST" \
-        --scripts "$SCRIPT_DIR/scripts" \
-        "$COMPONENT_PKG"
-fi
+echo "Running pkgbuild (unsigned component package)..."
+pkgbuild \
+    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+    --identifier "$BUNDLE_ID" \
+    --version "$VERSION" \
+    --install-location "$APP_INSTALL_LOCATION" \
+    --component-plist "$COMPONENT_PLIST" \
+    --scripts "$SCRIPT_DIR/scripts" \
+    "$COMPONENT_PKG"
 echo "Created: $COMPONENT_PKG"
 
 # Step 6: Create distribution package
