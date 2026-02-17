@@ -11,9 +11,15 @@ DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
 DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-180}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
+PROBE_SIGN_TARGET="${PROBE_SIGN_TARGET:-distribution}"
 
 if [ -z "$DEVELOPER_ID_APP" ] || [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_APP and DEVELOPER_ID_INSTALLER are required." >&2
+    exit 1
+fi
+
+if [ "$PROBE_SIGN_TARGET" != "distribution" ] && [ "$PROBE_SIGN_TARGET" != "component" ]; then
+    echo "Error: PROBE_SIGN_TARGET must be 'distribution' or 'component'." >&2
     exit 1
 fi
 
@@ -165,7 +171,20 @@ PRODUCTSIGN_ARGS+=(
     "$FINAL_PKG"
 )
 
-echo "==> Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
+if [ "$PROBE_SIGN_TARGET" = "component" ]; then
+    PRODUCTSIGN_ARGS=(
+        --sign "$DEVELOPER_ID_INSTALLER"
+    )
+    if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
+        PRODUCTSIGN_ARGS+=(--timestamp)
+    fi
+    PRODUCTSIGN_ARGS+=(
+        "$COMPONENT_PKG"
+        "$FINAL_PKG"
+    )
+fi
+
+echo "==> Running productsign (target: ${PROBE_SIGN_TARGET}, timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
 run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
 echo "==> Verifying final installer signature"

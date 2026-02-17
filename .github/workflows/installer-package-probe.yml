@@ -13,6 +13,11 @@ on:
         required: false
         default: "180"
         type: string
+      sign_target:
+        description: "Artifact to sign (distribution|component)"
+        required: false
+        default: "distribution"
+        type: string
 
 permissions:
   contents: read
@@ -85,3 +90,4 @@ jobs:
           DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
           PRODUCTSIGN_TIMEOUT_SECONDS: ${{ inputs.productsign_timeout_seconds || '180' }}
           PRODUCTSIGN_USE_TIMESTAMP: ${{ inputs.use_timestamp && 'true' || 'false' }}
+          PROBE_SIGN_TARGET: ${{ inputs.sign_target || 'distribution' }}
