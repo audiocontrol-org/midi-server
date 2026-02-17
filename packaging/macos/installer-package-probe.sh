@@ -1,0 +1,175 @@
+#!/bin/bash
+
+set -euo pipefail
+
+APP_NAME="MidiServer"
+BUNDLE_ID="org.audiocontrol.midi-server.probe"
+APP_INSTALL_LOCATION="/Applications/AudioControl"
+MIN_MACOS_VERSION="12.0"
+
+DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
+DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
+PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-180}"
+PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
+
+if [ -z "$DEVELOPER_ID_APP" ] || [ -z "$DEVELOPER_ID_INSTALLER" ]; then
+    echo "Error: DEVELOPER_ID_APP and DEVELOPER_ID_INSTALLER are required." >&2
+    exit 1
+fi
+
+run_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+    perl -e 'my $t=shift @ARGV; alarm($t); exec @ARGV or die "exec failed: $!";' \
+        "$timeout_seconds" "$@"
+}
+
+WORK_DIR="${RUNNER_TEMP:-/tmp}/installer-package-probe"
+PKG_DIR="$WORK_DIR/pkg"
+STAGING_DIR="$PKG_DIR/staging"
+RESOURCES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/resources"
+
+COMPONENT_PLIST="$PKG_DIR/component.plist"
+COMPONENT_PKG="$PKG_DIR/$APP_NAME-component.pkg"
+DIST_XML="$PKG_DIR/distribution.xml"
+UNSIGNED_PKG="$PKG_DIR/$APP_NAME-probe-unsigned.pkg"
+FINAL_PKG="$PKG_DIR/$APP_NAME-probe.pkg"
+
+echo "==> Preparing dummy app payload"
+rm -rf "$WORK_DIR"
+mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin"
+mkdir -p "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS"
+
+cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>org.audiocontrol.midi-server.probe</string>
+  <key>CFBundleName</key>
+  <string>MidiServer</string>
+  <key>CFBundleExecutable</key>
+  <string>MidiServer</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>0.0.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.0.0</string>
+</dict>
+</plist>
+EOF
+
+cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS/MidiServer" <<EOF
+#!/bin/bash
+exit 0
+EOF
+chmod +x "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/MacOS/MidiServer"
+
+cat > "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server" <<EOF
+#!/bin/bash
+echo "probe"
+EOF
+chmod +x "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
+xattr -cr "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app" || true
+
+echo "==> Signing dummy app payload"
+codesign --sign "$DEVELOPER_ID_APP" \
+    --options runtime \
+    --timestamp \
+    --force \
+    "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app/Contents/Resources/bin/midi-http-server"
+codesign --sign "$DEVELOPER_ID_APP" \
+    --options runtime \
+    --timestamp \
+    --force \
+    --deep \
+    "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app"
+codesign --verify --verbose=2 "$STAGING_DIR$APP_INSTALL_LOCATION/$APP_NAME.app"
+
+echo "==> Creating component plist"
+mkdir -p "$PKG_DIR"
+cat > "$COMPONENT_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>RootRelativeBundlePath</key>
+    <string>$APP_NAME.app</string>
+    <key>BundleIsRelocatable</key>
+    <false/>
+    <key>BundleIsVersionChecked</key>
+    <true/>
+    <key>BundleHasStrictIdentifier</key>
+    <false/>
+    <key>BundleOverwriteAction</key>
+    <string>upgrade</string>
+  </dict>
+</array>
+</plist>
+EOF
+
+echo "==> Running pkgbuild (unsigned component package)"
+pkgbuild \
+    --root "$STAGING_DIR$APP_INSTALL_LOCATION" \
+    --identifier "$BUNDLE_ID" \
+    --version "0.0.0" \
+    --install-location "$APP_INSTALL_LOCATION" \
+    --component-plist "$COMPONENT_PLIST" \
+    "$COMPONENT_PKG"
+
+echo "==> Running productbuild"
+cat > "$DIST_XML" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+  <title>MIDI Server Probe</title>
+  <organization>org.audiocontrol</organization>
+  <domains enable_localSystem="true" enable_currentUserHome="false"/>
+  <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
+  <volume-check>
+    <allowed-os-versions>
+      <os-version min="$MIN_MACOS_VERSION"/>
+    </allowed-os-versions>
+  </volume-check>
+  <welcome file="welcome.html" mime-type="text/html"/>
+  <conclusion file="conclusion.html" mime-type="text/html"/>
+  <choices-outline>
+    <line choice="default">
+      <line choice="$BUNDLE_ID"/>
+    </line>
+  </choices-outline>
+  <choice id="default"/>
+  <choice id="$BUNDLE_ID" visible="false" title="MIDI Server Probe">
+    <pkg-ref id="$BUNDLE_ID"/>
+  </choice>
+  <pkg-ref id="$BUNDLE_ID" version="0.0.0" onConclusion="none">$APP_NAME-component.pkg</pkg-ref>
+</installer-gui-script>
+EOF
+
+productbuild \
+    --distribution "$DIST_XML" \
+    --package-path "$PKG_DIR" \
+    --resources "$RESOURCES_DIR" \
+    "$UNSIGNED_PKG"
+
+PRODUCTSIGN_ARGS=(
+    --sign "$DEVELOPER_ID_INSTALLER"
+)
+if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
+    PRODUCTSIGN_ARGS+=(--timestamp)
+fi
+PRODUCTSIGN_ARGS+=(
+    "$UNSIGNED_PKG"
+    "$FINAL_PKG"
+)
+
+echo "==> Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
+run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
+
+echo "==> Verifying final installer signature"
+pkgutil --check-signature "$FINAL_PKG"
+ls -lh "$COMPONENT_PKG" "$UNSIGNED_PKG" "$FINAL_PKG"
+
+echo "==> Package probe passed"

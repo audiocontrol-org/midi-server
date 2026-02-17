@@ -49,10 +49,14 @@ Interpretation:
 
 After smoke results are stable, test production packaging in controlled layers:
 
-1. **R1: Build unsigned component + signed final pkg only**
-   - Keep app build enabled.
-   - Keep component pkg unsigned.
-   - Sign only final pkg with bounded `productsign` timeout.
+1. **R1: Package-path probe (no app build)**
+   - Use `.github/workflows/installer-package-probe.yml`.
+   - Creates a dummy `.app` at the real install path (`/Applications/AudioControl/MidiServer.app`).
+   - Runs the same packaging chain shape:
+     - `pkgbuild` (component pkg)
+     - `productbuild` (unsigned distribution pkg)
+     - `productsign` (final signed pkg)
+   - This isolates packaging/signing behavior from C++/Electron build time.
 2. **R2: Toggle final-pkg timestamp**
    - Run once with timestamp off.
    - Run once with timestamp on.
@@ -87,3 +91,18 @@ Record these fields for every run:
 5. Stop when root cause branch is proven by two consecutive reproducible outcomes.
 
 This prevents long release runs from being used as the primary debugging loop.
+
+## Initial Results (2026-02-17)
+
+Smoke-test matrix executed on `main`:
+
+| Test ID | Result | Notes |
+|---|---|---|
+| S1 | Pass | `use_timestamp=false`, `productsign_timeout_seconds=180`, run `22113408322` |
+| S2 | Pass | `use_timestamp=true`, `productsign_timeout_seconds=180`, run `22113428763` |
+| S3 | Pass | `use_timestamp=true`, `productsign_timeout_seconds=60`, run `22113442776` |
+
+Preliminary inference:
+
+- Raw cert import + `productsign` path works reliably in lightweight conditions.
+- Remaining failures are likely in packaging-path specifics (payload/package construction flow), not basic signer availability.
