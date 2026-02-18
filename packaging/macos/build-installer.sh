@@ -43,6 +43,7 @@ APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
 NOTARY_WAIT_TIMEOUT="${NOTARY_WAIT_TIMEOUT:-20m}"
 PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-600}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
+SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
 CSC_NAME="${CSC_NAME:-}"
 CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-}"
 
@@ -96,6 +97,7 @@ Environment variables:
     NOTARY_WAIT_TIMEOUT           Timeout for notarytool --wait (default: 20m)
     PRODUCTSIGN_TIMEOUT_SECONDS   Timeout in seconds for productsign (default: 600)
     PRODUCTSIGN_USE_TIMESTAMP     Set to true to add --timestamp when running productsign
+    SIGN_KEYCHAIN                 Optional keychain name/path for productsign lookup
     
 Defaults are loaded from packaging/macos/release.config.sh when present.
 Encrypted notarization secrets are loaded from ~/.config/audiocontrol.org/midi-server/release.secrets.enc
@@ -396,6 +398,9 @@ if [ "$SKIP_SIGN" = false ]; then
     PRODUCTSIGN_ARGS=(
         --sign "$DEVELOPER_ID_INSTALLER"
     )
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        PRODUCTSIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
+    fi
     if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
         PRODUCTSIGN_ARGS+=(--timestamp)
     else
@@ -406,7 +411,7 @@ if [ "$SKIP_SIGN" = false ]; then
         "$FINAL_PKG"
     )
 
-    echo "Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})..."
+    echo "Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP}, keychain: ${SIGN_KEYCHAIN:-default})..."
     run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
     rm "$UNSIGNED_PKG"

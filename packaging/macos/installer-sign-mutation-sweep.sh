@@ -6,6 +6,7 @@ DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
 SIGN_TIMEOUT_SECONDS="${SIGN_TIMEOUT_SECONDS:-60}"
 USE_TIMESTAMP="${USE_TIMESTAMP:-false}"
+SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
 
 if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_INSTALLER is required." >&2
@@ -30,6 +31,9 @@ sign_pkg() {
     local input_pkg="$1"
     local output_pkg="$2"
     local args=(--sign "$DEVELOPER_ID_INSTALLER")
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        args+=(--keychain "$SIGN_KEYCHAIN")
+    fi
     if [ "$USE_TIMESTAMP" = true ]; then
         args+=(--timestamp)
     else

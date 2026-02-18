@@ -134,3 +134,15 @@ Observed failure boundary:
 Current strongest hypothesis:
 
 - The trigger is signing pkgs whose payload includes an `.app` bundle (not signer/certificate import itself).
+
+Mutation sweep results (after explicit `--timestamp=none` support):
+
+| Test ID | Result | Notes |
+|---|---|---|
+| M1 | Fail | baseline `case_smoke_flat` timed out at 60s; all other cases also timed out, run `22122405935` |
+
+Refined inference:
+
+- Failure reproduces even for the smallest flat payload (`case_smoke_flat`) in the sweep workflow.
+- This points away from payload/package-shape and toward signing context differences in that job.
+- Next discriminator: force `productsign`/`productbuild --sign` to resolve identities from the intended keychain explicitly (`--keychain`), then rerun smoke + sweep.

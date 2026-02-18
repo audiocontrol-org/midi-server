@@ -5,6 +5,7 @@ set -euo pipefail
 DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-180}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
+SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
 
 if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_INSTALLER is required." >&2
@@ -41,6 +42,9 @@ pkgbuild \
 PRODUCTSIGN_ARGS=(
     --sign "$DEVELOPER_ID_INSTALLER"
 )
+if [ -n "$SIGN_KEYCHAIN" ]; then
+    PRODUCTSIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
+fi
 if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
     PRODUCTSIGN_ARGS+=(--timestamp)
 else
@@ -51,7 +55,7 @@ PRODUCTSIGN_ARGS+=(
     "$SIGNED_PKG"
 )
 
-echo "==> Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
+echo "==> Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP}, keychain: ${SIGN_KEYCHAIN:-default})"
 run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
 echo "==> Verifying signed smoke pkg"

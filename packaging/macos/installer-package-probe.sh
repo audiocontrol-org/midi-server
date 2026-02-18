@@ -11,6 +11,7 @@ DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
 DEVELOPER_ID_INSTALLER="${DEVELOPER_ID_INSTALLER:-}"
 PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-180}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
+SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
 PROBE_SIGN_TARGET="${PROBE_SIGN_TARGET:-distribution}"
 PROBE_USE_COMPONENT_PLIST="${PROBE_USE_COMPONENT_PLIST:-true}"
 PROBE_PAYLOAD_TYPE="${PROBE_PAYLOAD_TYPE:-app}"
@@ -210,6 +211,9 @@ EOF
             --sign "$DEVELOPER_ID_INSTALLER"
             "$FINAL_PKG"
         )
+        if [ -n "$SIGN_KEYCHAIN" ]; then
+            PRODUCTBUILD_ARGS=(--keychain "$SIGN_KEYCHAIN" "${PRODUCTBUILD_ARGS[@]}")
+        fi
         if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
             PRODUCTBUILD_ARGS=(--timestamp "${PRODUCTBUILD_ARGS[@]}")
         else
@@ -231,6 +235,9 @@ fi
 PRODUCTSIGN_ARGS=(
     --sign "$DEVELOPER_ID_INSTALLER"
 )
+if [ -n "$SIGN_KEYCHAIN" ]; then
+    PRODUCTSIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
+fi
 if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
     PRODUCTSIGN_ARGS+=(--timestamp)
 else
@@ -245,6 +252,9 @@ if [ "$PROBE_SIGN_TARGET" = "component" ]; then
     PRODUCTSIGN_ARGS=(
         --sign "$DEVELOPER_ID_INSTALLER"
     )
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        PRODUCTSIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
+    fi
     if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
         PRODUCTSIGN_ARGS+=(--timestamp)
     else
@@ -263,7 +273,7 @@ if [ "$PROBE_SIGN_METHOD" = "productbuild_sign" ]; then
         exit 1
     fi
 else
-    echo "==> Running productsign (target: ${PROBE_SIGN_TARGET}, timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
+    echo "==> Running productsign (target: ${PROBE_SIGN_TARGET}, timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP}, keychain: ${SIGN_KEYCHAIN:-default})"
     if [ "$PROBE_SIGN_TARGET" = "distribution" ] && [ "$PROBE_RUN_PRODUCTBUILD" != true ]; then
         echo "Error: distribution signing requires PROBE_RUN_PRODUCTBUILD=true." >&2
         exit 1
