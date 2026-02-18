@@ -15,6 +15,7 @@ PROBE_SIGN_TARGET="${PROBE_SIGN_TARGET:-distribution}"
 PROBE_USE_COMPONENT_PLIST="${PROBE_USE_COMPONENT_PLIST:-true}"
 PROBE_PAYLOAD_TYPE="${PROBE_PAYLOAD_TYPE:-app}"
 PROBE_RUN_PRODUCTBUILD="${PROBE_RUN_PRODUCTBUILD:-true}"
+PROBE_SIGN_METHOD="${PROBE_SIGN_METHOD:-productsign}"
 
 if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_INSTALLER is required." >&2
@@ -39,6 +40,10 @@ if [ "$PROBE_PAYLOAD_TYPE" != "app" ] && [ "$PROBE_PAYLOAD_TYPE" != "flat" ]; th
 fi
 if [ "$PROBE_RUN_PRODUCTBUILD" != "true" ] && [ "$PROBE_RUN_PRODUCTBUILD" != "false" ]; then
     echo "Error: PROBE_RUN_PRODUCTBUILD must be 'true' or 'false'." >&2
+    exit 1
+fi
+if [ "$PROBE_SIGN_METHOD" != "productsign" ] && [ "$PROBE_SIGN_METHOD" != "productbuild_sign" ]; then
+    echo "Error: PROBE_SIGN_METHOD must be 'productsign' or 'productbuild_sign'." >&2
     exit 1
 fi
 
@@ -197,11 +202,26 @@ cat > "$DIST_XML" <<EOF
 </installer-gui-script>
 EOF
 
-    productbuild \
-        --distribution "$DIST_XML" \
-        --package-path "$PKG_DIR" \
-        --resources "$RESOURCES_DIR" \
-        "$UNSIGNED_PKG"
+    if [ "$PROBE_SIGN_METHOD" = "productbuild_sign" ]; then
+        PRODUCTBUILD_ARGS=(
+            --distribution "$DIST_XML"
+            --package-path "$PKG_DIR"
+            --resources "$RESOURCES_DIR"
+            --sign "$DEVELOPER_ID_INSTALLER"
+            "$FINAL_PKG"
+        )
+        if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
+            PRODUCTBUILD_ARGS=(--timestamp "${PRODUCTBUILD_ARGS[@]}")
+        fi
+        echo "==> Running productbuild with signing (method: productbuild_sign)"
+        run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productbuild "${PRODUCTBUILD_ARGS[@]}"
+    else
+        productbuild \
+            --distribution "$DIST_XML" \
+            --package-path "$PKG_DIR" \
+            --resources "$RESOURCES_DIR" \
+            "$UNSIGNED_PKG"
+    fi
 else
     echo "==> Skipping productbuild (PROBE_RUN_PRODUCTBUILD=false)"
 fi
@@ -230,12 +250,20 @@ if [ "$PROBE_SIGN_TARGET" = "component" ]; then
     )
 fi
 
-echo "==> Running productsign (target: ${PROBE_SIGN_TARGET}, timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
-if [ "$PROBE_SIGN_TARGET" = "distribution" ] && [ "$PROBE_RUN_PRODUCTBUILD" != true ]; then
-    echo "Error: distribution signing requires PROBE_RUN_PRODUCTBUILD=true." >&2
-    exit 1
+if [ "$PROBE_SIGN_METHOD" = "productbuild_sign" ]; then
+    echo "==> Skipping productsign (method: productbuild_sign)"
+    if [ ! -f "$FINAL_PKG" ]; then
+        echo "Error: expected signed pkg at $FINAL_PKG from productbuild --sign." >&2
+        exit 1
+    fi
+else
+    echo "==> Running productsign (target: ${PROBE_SIGN_TARGET}, timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})"
+    if [ "$PROBE_SIGN_TARGET" = "distribution" ] && [ "$PROBE_RUN_PRODUCTBUILD" != true ]; then
+        echo "Error: distribution signing requires PROBE_RUN_PRODUCTBUILD=true." >&2
+        exit 1
+    fi
+    run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 fi
-run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
 echo "==> Verifying final installer signature"
 pkgutil --check-signature "$FINAL_PKG"
