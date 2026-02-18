@@ -92,6 +92,11 @@ Record these fields for every run:
 
 This prevents long release runs from being used as the primary debugging loop.
 
+## Automated Delta Sweep
+
+Use `.github/workflows/installer-sign-mutation-sweep.yml` to run ordered signing mutations in one job.
+It executes baseline-to-release-like cases and reports the first failing case.
+
 ## Initial Results (2026-02-17)
 
 Smoke-test matrix executed on `main`:
