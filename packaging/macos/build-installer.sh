@@ -420,7 +420,21 @@ if [ "$SKIP_SIGN" = false ]; then
     )
 
     echo "Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP}, keychain: ${SIGN_KEYCHAIN:-default})..."
+    echo "Package size: $(du -h "$UNSIGNED_PKG" | cut -f1)"
+    echo "Command: productsign ${PRODUCTSIGN_ARGS[*]}"
+
+    # Ensure keychain is unlocked and set as default for signing
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        echo "Unlocking keychain $SIGN_KEYCHAIN..."
+        security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" "$SIGN_KEYCHAIN" 2>/dev/null || true
+        security set-keychain-settings -t 3600 -u "$SIGN_KEYCHAIN" 2>/dev/null || true
+    fi
+
+    echo "Listing signing identities..."
+    security find-identity -v -p basic "$SIGN_KEYCHAIN" 2>/dev/null || security find-identity -v -p basic
+    echo "Starting productsign at $(date)..."
     run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
+    echo "productsign completed at $(date)"
 
     rm "$UNSIGNED_PKG"
 
