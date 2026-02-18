@@ -41,7 +41,7 @@ APPLE_ID="${APPLE_ID:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
 NOTARY_WAIT_TIMEOUT="${NOTARY_WAIT_TIMEOUT:-20m}"
-PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-600}"
+PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-120}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
 CODESIGN_USE_TIMESTAMP="${CODESIGN_USE_TIMESTAMP:-${PRODUCTSIGN_USE_TIMESTAMP:-false}}"
 SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
@@ -433,8 +433,56 @@ if [ "$SKIP_SIGN" = false ]; then
     echo "Listing signing identities..."
     security find-identity -v -p basic "$SIGN_KEYCHAIN" 2>/dev/null || security find-identity -v -p basic
     echo "Starting productsign at $(date)..."
-    run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
-    echo "productsign completed at $(date)"
+
+    # Run productsign in background and monitor what it's doing
+    productsign "${PRODUCTSIGN_ARGS[@]}" &
+    PRODUCTSIGN_PID=$!
+    echo "productsign started with PID: $PRODUCTSIGN_PID"
+
+    MONITOR_INTERVAL=10
+    ELAPSED=0
+    while kill -0 "$PRODUCTSIGN_PID" 2>/dev/null; do
+        if [ "$ELAPSED" -ge "$PRODUCTSIGN_TIMEOUT_SECONDS" ]; then
+            echo "TIMEOUT: productsign exceeded ${PRODUCTSIGN_TIMEOUT_SECONDS}s, killing..."
+            kill -9 "$PRODUCTSIGN_PID" 2>/dev/null || true
+            exit 142
+        fi
+
+        sleep "$MONITOR_INTERVAL"
+        ELAPSED=$((ELAPSED + MONITOR_INTERVAL))
+
+        echo ""
+        echo "=== productsign monitor (${ELAPSED}s elapsed) ==="
+        echo "Process state:"
+        ps -p "$PRODUCTSIGN_PID" -o pid,state,%cpu,%mem,etime,command 2>/dev/null || echo "  Process not found"
+
+        echo "Network connections:"
+        lsof -p "$PRODUCTSIGN_PID" -i 2>/dev/null | head -10 || echo "  None or not accessible"
+
+        echo "Open files (sample):"
+        lsof -p "$PRODUCTSIGN_PID" 2>/dev/null | grep -E "(REG|DIR)" | tail -5 || echo "  None or not accessible"
+
+        echo "Child processes:"
+        pgrep -P "$PRODUCTSIGN_PID" 2>/dev/null | while read cpid; do
+            ps -p "$cpid" -o pid,state,%cpu,command 2>/dev/null
+        done || echo "  None"
+
+        # Check if output file is growing
+        if [ -f "$FINAL_PKG" ]; then
+            echo "Output file size: $(du -h "$FINAL_PKG" | cut -f1)"
+        else
+            echo "Output file not yet created"
+        fi
+    done
+
+    # Check exit status
+    wait "$PRODUCTSIGN_PID"
+    PRODUCTSIGN_EXIT=$?
+    echo "productsign completed at $(date) with exit code: $PRODUCTSIGN_EXIT"
+    if [ "$PRODUCTSIGN_EXIT" -ne 0 ]; then
+        echo "ERROR: productsign failed with exit code $PRODUCTSIGN_EXIT"
+        exit "$PRODUCTSIGN_EXIT"
+    fi
 
     rm "$UNSIGNED_PKG"
 
