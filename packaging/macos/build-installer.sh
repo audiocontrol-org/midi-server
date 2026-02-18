@@ -96,7 +96,7 @@ Environment variables:
     APPLE_TEAM_ID                 Team ID for notarization
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
     NOTARY_WAIT_TIMEOUT           Timeout for notarytool --wait (default: 20m)
-    PRODUCTSIGN_TIMEOUT_SECONDS   Timeout in seconds for productsign (default: 600)
+    PRODUCTSIGN_TIMEOUT_SECONDS   Timeout in seconds for productsign (default: 120)
     PRODUCTSIGN_USE_TIMESTAMP     Set to true to add --timestamp when running productsign
     CODESIGN_USE_TIMESTAMP        Set to true to add --timestamp when running codesign (defaults to PRODUCTSIGN_USE_TIMESTAMP)
     SIGN_KEYCHAIN                 Optional keychain name/path for codesign/productsign lookup
