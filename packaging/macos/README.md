@@ -1,8 +1,51 @@
-# macOS Installer Build
+# macOS Release Process
 
-This directory contains scripts for building signed and notarized macOS installers. **All signing and notarization is done locally** - CI only performs unsigned builds and validation.
+This directory contains scripts for building, signing, notarizing, and publishing macOS releases. **All signing and notarization is done locally** - CI only performs unsigned builds and validation.
 
-## Quick Start
+## Release Workflow
+
+### One-Command Release
+
+The simplest way to cut a release:
+
+```bash
+export RELEASE_SECRETS_PASSWORD="your-password"
+./packaging/macos/release-cut.sh --version 1.0.0
+```
+
+This single command:
+1. Updates VERSION file and package.json
+2. Creates release commit and tag
+3. Builds C++ and Electron apps
+4. Signs with Developer ID certificates
+5. Notarizes with Apple
+6. Pushes commit and tag to origin
+7. Creates GitHub release with all artifacts
+
+### Step-by-Step Release
+
+For more control, run each step separately:
+
+```bash
+export RELEASE_SECRETS_PASSWORD="your-password"
+
+# 1. Prepare version (updates files, commits, tags)
+./packaging/macos/release-prepare.sh --version 1.0.0 --commit --tag
+
+# 2. Build and sign
+./packaging/macos/release-build.sh --version 1.0.0
+
+# 3. Push to remote
+git push origin main
+git push origin v1.0.0
+
+# 4. Publish GitHub release
+./packaging/macos/release-publish.sh --version 1.0.0
+```
+
+### Build Only (No Release)
+
+To build a signed installer without publishing:
 
 ```bash
 cd dashboard
@@ -102,20 +145,50 @@ The build produces:
 | Update manifest | `dashboard/dist/latest-mac.yml` |
 | Update zip | `dashboard/dist/MidiServer-X.Y.Z-mac.zip` |
 
+## Release Options
+
+### release-cut.sh
+
+| Flag | Description |
+|------|-------------|
+| `--version VERSION` | Release version (required) |
+| `--notes TEXT` | Release notes body |
+| `--notes-file FILE` | Release notes from file |
+| `--draft` | Create as draft release |
+| `--prerelease` | Mark as prerelease |
+| `--no-push` | Skip git push (build only) |
+| `--` | Pass remaining args to build-installer.sh |
+
+### Examples
+
+```bash
+# Standard release
+./packaging/macos/release-cut.sh --version 1.0.0
+
+# Prerelease with notes
+./packaging/macos/release-cut.sh --version 1.0.0-beta.1 --prerelease --notes "Beta release"
+
+# Draft release (review before publishing)
+./packaging/macos/release-cut.sh --version 1.0.0 --draft
+
+# Skip notarization (faster, for testing)
+./packaging/macos/release-cut.sh --version 1.0.0 -- --skip-notarize
+```
+
 ## Scripts Reference
 
 | Script | Purpose |
 |--------|---------|
-| `build-installer.sh` | Main build script - builds, signs, and notarizes |
-| `release-build.sh` | Wrapper for build-installer.sh with version handling |
+| `release-cut.sh` | **Full release flow** - prepare, build, sign, push, publish |
+| `release-prepare.sh` | Updates version, creates commit and tag |
+| `release-build.sh` | Builds signed and notarized artifacts |
+| `release-publish.sh` | Creates GitHub release with artifacts |
+| `build-installer.sh` | Low-level build script |
 | `release-preflight.sh` | Validates configuration and scripts |
 | `release-secrets.sh` | Loads encrypted secrets into environment |
 | `release-secrets-init.sh` | Interactive setup for secrets file |
 | `release-common.sh` | Shared utilities |
 | `release.config.sh` | Default configuration values |
-| `release-prepare.sh` | Prepares a release (bumps version, etc.) |
-| `release-cut.sh` | Cuts a release (creates git tag) |
-| `release-publish.sh` | Publishes release artifacts |
 
 ## Why Local-Only Signing?
 
