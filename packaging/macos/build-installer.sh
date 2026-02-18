@@ -424,23 +424,39 @@ if [ "$SKIP_SIGN" = false ]; then
     echo "Command: productsign ${PRODUCTSIGN_ARGS[*]}"
 
     # Ensure keychain is unlocked and set as default for signing
+    # Resolve to full path if needed
     if [ -n "$SIGN_KEYCHAIN" ]; then
-        echo "Unlocking keychain $SIGN_KEYCHAIN..."
+        if [[ "$SIGN_KEYCHAIN" != /* ]]; then
+            SIGN_KEYCHAIN_FULL="$HOME/Library/Keychains/$SIGN_KEYCHAIN"
+            echo "Resolving keychain to full path: $SIGN_KEYCHAIN_FULL"
+        else
+            SIGN_KEYCHAIN_FULL="$SIGN_KEYCHAIN"
+        fi
+
+        echo "Unlocking keychain $SIGN_KEYCHAIN_FULL..."
         if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
             echo "WARNING: KEYCHAIN_PASSWORD is not set!"
         fi
-        if security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" "$SIGN_KEYCHAIN"; then
+        if security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" "$SIGN_KEYCHAIN_FULL"; then
             echo "Keychain unlocked successfully"
         else
             echo "ERROR: Failed to unlock keychain (exit code: $?)"
         fi
-        security set-keychain-settings -t 3600 -u "$SIGN_KEYCHAIN" || echo "WARNING: set-keychain-settings failed"
+        security set-keychain-settings -t 3600 -u "$SIGN_KEYCHAIN_FULL" || echo "WARNING: set-keychain-settings failed"
 
         echo "Keychain info:"
-        security show-keychain-info "$SIGN_KEYCHAIN" 2>&1 || true
+        security show-keychain-info "$SIGN_KEYCHAIN_FULL" 2>&1 || true
 
-        echo "Dumping partition list for installer identity..."
-        security dump-keychain "$SIGN_KEYCHAIN" 2>&1 | grep -A5 "Developer ID Installer" | head -20 || true
+        # Update PRODUCTSIGN_ARGS to use full path
+        PRODUCTSIGN_ARGS=()
+        PRODUCTSIGN_ARGS+=(--sign "$DEVELOPER_ID_INSTALLER")
+        PRODUCTSIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN_FULL")
+        if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
+            PRODUCTSIGN_ARGS+=(--timestamp)
+        else
+            PRODUCTSIGN_ARGS+=(--timestamp=none)
+        fi
+        PRODUCTSIGN_ARGS+=("$UNSIGNED_PKG" "$FINAL_PKG")
     fi
 
     echo "Current keychain search list:"
