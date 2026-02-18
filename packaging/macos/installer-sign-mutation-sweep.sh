@@ -32,6 +32,8 @@ sign_pkg() {
     local args=(--sign "$DEVELOPER_ID_INSTALLER")
     if [ "$USE_TIMESTAMP" = true ]; then
         args+=(--timestamp)
+    else
+        args+=(--timestamp=none)
     fi
     args+=("$input_pkg" "$output_pkg")
     run_with_timeout "$SIGN_TIMEOUT_SECONDS" productsign "${args[@]}"

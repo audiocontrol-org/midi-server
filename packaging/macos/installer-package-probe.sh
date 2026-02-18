@@ -212,6 +212,8 @@ EOF
         )
         if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
             PRODUCTBUILD_ARGS=(--timestamp "${PRODUCTBUILD_ARGS[@]}")
+        else
+            PRODUCTBUILD_ARGS=(--timestamp=none "${PRODUCTBUILD_ARGS[@]}")
         fi
         echo "==> Running productbuild with signing (method: productbuild_sign)"
         run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productbuild "${PRODUCTBUILD_ARGS[@]}"
@@ -231,6 +233,8 @@ PRODUCTSIGN_ARGS=(
 )
 if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
     PRODUCTSIGN_ARGS+=(--timestamp)
+else
+    PRODUCTSIGN_ARGS+=(--timestamp=none)
 fi
 PRODUCTSIGN_ARGS+=(
     "$UNSIGNED_PKG"
@@ -243,6 +247,8 @@ if [ "$PROBE_SIGN_TARGET" = "component" ]; then
     )
     if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
         PRODUCTSIGN_ARGS+=(--timestamp)
+    else
+        PRODUCTSIGN_ARGS+=(--timestamp=none)
     fi
     PRODUCTSIGN_ARGS+=(
         "$COMPONENT_PKG"

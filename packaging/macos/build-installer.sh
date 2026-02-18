@@ -398,6 +398,8 @@ if [ "$SKIP_SIGN" = false ]; then
     )
     if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
         PRODUCTSIGN_ARGS+=(--timestamp)
+    else
+        PRODUCTSIGN_ARGS+=(--timestamp=none)
     fi
     PRODUCTSIGN_ARGS+=(
         "$UNSIGNED_PKG"
