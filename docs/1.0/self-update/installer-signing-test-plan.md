@@ -134,3 +134,45 @@ Observed failure boundary:
 Current strongest hypothesis:
 
 - The trigger is signing pkgs whose payload includes an `.app` bundle (not signer/certificate import itself).
+
+Mutation sweep results (after explicit `--timestamp=none` support):
+
+| Test ID | Result | Notes |
+|---|---|---|
+| M1 | Fail | baseline `case_smoke_flat` timed out at 60s; all other cases also timed out, run `22122405935` |
+
+Refined inference:
+
+- Failure reproduces even for the smallest flat payload (`case_smoke_flat`) in the sweep workflow.
+- This points away from payload/package-shape and toward signing context differences in that job.
+- Next discriminator: force `productsign`/`productbuild --sign` to resolve identities from the intended keychain explicitly (`--keychain`), then rerun smoke + sweep.
+
+Follow-up (2026-02-18, branch `fix/ci-entitlements-path`):
+
+- Smoke with keychain-pinned signing passes:
+  - run `22124371749` (no app cert import)
+  - run `22127072388` (with app cert import)
+- Sweep with aligned import order + identity listing no longer fails at `productsign` baseline:
+  - run `22127177512` shows `case_smoke_flat` and `case_flat_probe_like` passing.
+  - run was then canceled at job timeout with orphan `codesign` process, indicating next bottleneck moved to app-signing phase in sweep (`create_minimal_app`).
+
+**Fix applied**: Added `--keychain` and conditional `--timestamp` to `codesign` in `create_minimal_app()`:
+- run `22127818901` - **ALL CASES PASS**
+  - `case_smoke_flat`: 1s
+  - `case_flat_probe_like`: 0s
+  - `case_app_payload_no_component`: 241s
+  - `case_app_payload_component_plist`: 241s
+  - `case_distribution_productbuild_then_sign`: 241s
+
+Root cause confirmed: `codesign` was missing `--keychain` flag and unconditionally using `--timestamp`, causing hangs during TSA server calls or keychain resolution in CI.
+
+- run `22129249001` - **ALL CASES PASS** (with `use_timestamp=true`)
+  - Confirms timestamp path also works after fix
+
+## Resolution
+
+The installer signing hang was caused by `codesign` commands in `create_minimal_app()` that:
+1. Did not specify `--keychain`, causing identity resolution to search all keychains
+2. Unconditionally used `--timestamp`, attempting TSA calls regardless of configuration
+
+Fix: Added `--keychain "$SIGN_KEYCHAIN"` and conditional `--timestamp` based on `USE_TIMESTAMP` env var to align with the working `sign_pkg()` function.

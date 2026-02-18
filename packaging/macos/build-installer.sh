@@ -41,8 +41,10 @@ APPLE_ID="${APPLE_ID:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-}"
 NOTARY_WAIT_TIMEOUT="${NOTARY_WAIT_TIMEOUT:-20m}"
-PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-600}"
+PRODUCTSIGN_TIMEOUT_SECONDS="${PRODUCTSIGN_TIMEOUT_SECONDS:-120}"
 PRODUCTSIGN_USE_TIMESTAMP="${PRODUCTSIGN_USE_TIMESTAMP:-false}"
+CODESIGN_USE_TIMESTAMP="${CODESIGN_USE_TIMESTAMP:-${PRODUCTSIGN_USE_TIMESTAMP:-false}}"
+SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
 CSC_NAME="${CSC_NAME:-}"
 CSC_IDENTITY_AUTO_DISCOVERY="${CSC_IDENTITY_AUTO_DISCOVERY:-}"
 
@@ -94,8 +96,10 @@ Environment variables:
     APPLE_TEAM_ID                 Team ID for notarization
     APPLE_APP_SPECIFIC_PASSWORD   App-specific password for notarization
     NOTARY_WAIT_TIMEOUT           Timeout for notarytool --wait (default: 20m)
-    PRODUCTSIGN_TIMEOUT_SECONDS   Timeout in seconds for productsign (default: 600)
+    PRODUCTSIGN_TIMEOUT_SECONDS   Timeout in seconds for productsign (default: 120)
     PRODUCTSIGN_USE_TIMESTAMP     Set to true to add --timestamp when running productsign
+    CODESIGN_USE_TIMESTAMP        Set to true to add --timestamp when running codesign (defaults to PRODUCTSIGN_USE_TIMESTAMP)
+    SIGN_KEYCHAIN                 Optional keychain name/path for codesign/productsign lookup
     
 Defaults are loaded from packaging/macos/release.config.sh when present.
 Encrypted notarization secrets are loaded from ~/.config/audiocontrol.org/midi-server/release.secrets.enc
@@ -276,23 +280,29 @@ if [ "$SKIP_SIGN" = false ]; then
     echo ""
     echo "=== Step 4: Signing App ==="
 
+    CODESIGN_ARGS=(
+        --sign "$DEVELOPER_ID_APP"
+        --options runtime
+        --entitlements "$SCRIPT_DIR/entitlements.plist"
+        --force
+    )
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        CODESIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
+    fi
+    if [ "$CODESIGN_USE_TIMESTAMP" = true ]; then
+        CODESIGN_ARGS+=(--timestamp)
+    fi
+
+    echo "Signing (keychain: ${SIGN_KEYCHAIN:-default}, timestamp: $CODESIGN_USE_TIMESTAMP)..."
+
     # Sign the bundled CLI binary
     echo "Signing bundled CLI..."
-    codesign --sign "$DEVELOPER_ID_APP" \
-        --options runtime \
-        --entitlements "$SCRIPT_DIR/entitlements.plist" \
-        --timestamp \
-        --force \
+    codesign "${CODESIGN_ARGS[@]}" \
         "$STAGED_APP/Contents/Resources/bin/midi-http-server"
 
     # Sign the main app bundle (deep signs all nested components)
     echo "Signing app bundle..."
-    codesign --sign "$DEVELOPER_ID_APP" \
-        --options runtime \
-        --entitlements "$SCRIPT_DIR/entitlements.plist" \
-        --timestamp \
-        --force \
-        --deep \
+    codesign "${CODESIGN_ARGS[@]}" --deep \
         "$STAGED_APP"
 
     echo "Verifying signature..."
@@ -396,6 +406,9 @@ if [ "$SKIP_SIGN" = false ]; then
     PRODUCTSIGN_ARGS=(
         --sign "$DEVELOPER_ID_INSTALLER"
     )
+    if [ -n "$SIGN_KEYCHAIN" ]; then
+        PRODUCTSIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
+    fi
     if [ "$PRODUCTSIGN_USE_TIMESTAMP" = true ]; then
         PRODUCTSIGN_ARGS+=(--timestamp)
     else
@@ -406,7 +419,7 @@ if [ "$SKIP_SIGN" = false ]; then
         "$FINAL_PKG"
     )
 
-    echo "Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s, timestamp: ${PRODUCTSIGN_USE_TIMESTAMP})..."
+    echo "Running productsign (timeout: ${PRODUCTSIGN_TIMEOUT_SECONDS}s)..."
     run_with_timeout "$PRODUCTSIGN_TIMEOUT_SECONDS" productsign "${PRODUCTSIGN_ARGS[@]}"
 
     rm "$UNSIGNED_PKG"

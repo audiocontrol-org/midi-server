@@ -18,6 +18,7 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:mac": "npm run build && electron-builder --mac --publish never",
+    "build:mac:installer": "../packaging/macos/build-installer.sh",
     "build:win": "npm run build && electron-builder --win",
     "build:linux": "npm run build && electron-builder --linux"
   },
