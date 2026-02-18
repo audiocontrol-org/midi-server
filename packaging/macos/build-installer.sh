@@ -443,8 +443,20 @@ if [ "$SKIP_SIGN" = false ]; then
         security dump-keychain "$SIGN_KEYCHAIN" 2>&1 | grep -A5 "Developer ID Installer" | head -20 || true
     fi
 
+    echo "Current keychain search list:"
+    security list-keychains -d user
+    echo "Default keychain:"
+    security default-keychain
     echo "Listing signing identities..."
     security find-identity -v -p basic "$SIGN_KEYCHAIN" 2>/dev/null || security find-identity -v -p basic
+    # Test key access before productsign
+    echo "Testing private key access..."
+    if security find-key -l "Developer ID Installer" "$SIGN_KEYCHAIN" 2>&1; then
+        echo "Key found and accessible"
+    else
+        echo "WARNING: Could not find/access installer key"
+    fi
+
     echo "Starting productsign at $(date)..."
 
     # Run productsign in background and monitor what it's doing
