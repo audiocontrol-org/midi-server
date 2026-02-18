@@ -165,3 +165,14 @@ Follow-up (2026-02-18, branch `fix/ci-entitlements-path`):
   - `case_distribution_productbuild_then_sign`: 241s
 
 Root cause confirmed: `codesign` was missing `--keychain` flag and unconditionally using `--timestamp`, causing hangs during TSA server calls or keychain resolution in CI.
+
+- run `22129249001` - **ALL CASES PASS** (with `use_timestamp=true`)
+  - Confirms timestamp path also works after fix
+
+## Resolution
+
+The installer signing hang was caused by `codesign` commands in `create_minimal_app()` that:
+1. Did not specify `--keychain`, causing identity resolution to search all keychains
+2. Unconditionally used `--timestamp`, attempting TSA calls regardless of configuration
+
+Fix: Added `--keychain "$SIGN_KEYCHAIN"` and conditional `--timestamp` based on `USE_TIMESTAMP` env var to align with the working `sign_pkg()` function.
