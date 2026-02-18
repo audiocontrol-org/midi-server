@@ -444,6 +444,18 @@ if [ "$SKIP_SIGN" = false ]; then
         fi
         security set-keychain-settings -t 3600 -u "$SIGN_KEYCHAIN_FULL" || echo "WARNING: set-keychain-settings failed"
 
+        # Re-apply partition list to ensure productsign has access
+        echo "Re-applying partition list..."
+        if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
+            security set-key-partition-list \
+                -S apple-tool:,apple: \
+                -s \
+                -k "${KEYCHAIN_PASSWORD}" \
+                "$SIGN_KEYCHAIN_FULL" 2>&1 || echo "WARNING: set-key-partition-list failed"
+        else
+            echo "WARNING: KEYCHAIN_PASSWORD not set, skipping partition list"
+        fi
+
         echo "Keychain info:"
         security show-keychain-info "$SIGN_KEYCHAIN_FULL" 2>&1 || true
 
