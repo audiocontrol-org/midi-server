@@ -7,6 +7,7 @@ DEVELOPER_ID_APP="${DEVELOPER_ID_APP:-}"
 SIGN_TIMEOUT_SECONDS="${SIGN_TIMEOUT_SECONDS:-60}"
 USE_TIMESTAMP="${USE_TIMESTAMP:-false}"
 SIGN_KEYCHAIN="${SIGN_KEYCHAIN:-${KEYCHAIN_NAME:-}}"
+CODESIGN_TIMEOUT_SECONDS="${CODESIGN_TIMEOUT_SECONDS:-120}"
 
 if [ -z "$DEVELOPER_ID_INSTALLER" ]; then
     echo "Error: DEVELOPER_ID_INSTALLER is required." >&2
@@ -84,11 +85,14 @@ EOF
     xattr -cr "$app_root" || true
 
     if [ -n "$DEVELOPER_ID_APP" ]; then
-        codesign --sign "$DEVELOPER_ID_APP" --options runtime --force --timestamp \
+        run_with_timeout "$CODESIGN_TIMEOUT_SECONDS" \
+            codesign --sign "$DEVELOPER_ID_APP" --options runtime --force --timestamp \
             "$app_root/Contents/Resources/bin/midi-http-server"
-        codesign --sign "$DEVELOPER_ID_APP" --options runtime --force --timestamp --deep \
+        run_with_timeout "$CODESIGN_TIMEOUT_SECONDS" \
+            codesign --sign "$DEVELOPER_ID_APP" --options runtime --force --timestamp --deep \
             "$app_root"
-        codesign --verify --verbose=2 "$app_root"
+        run_with_timeout "$CODESIGN_TIMEOUT_SECONDS" \
+            codesign --verify --verbose=2 "$app_root"
     fi
 }
 

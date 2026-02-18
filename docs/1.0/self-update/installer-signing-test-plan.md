@@ -146,3 +146,12 @@ Refined inference:
 - Failure reproduces even for the smallest flat payload (`case_smoke_flat`) in the sweep workflow.
 - This points away from payload/package-shape and toward signing context differences in that job.
 - Next discriminator: force `productsign`/`productbuild --sign` to resolve identities from the intended keychain explicitly (`--keychain`), then rerun smoke + sweep.
+
+Follow-up (2026-02-18, branch `fix/ci-entitlements-path`):
+
+- Smoke with keychain-pinned signing passes:
+  - run `22124371749` (no app cert import)
+  - run `22127072388` (with app cert import)
+- Sweep with aligned import order + identity listing no longer fails at `productsign` baseline:
+  - run `22127177512` shows `case_smoke_flat` and `case_flat_probe_like` passing.
+  - run was then canceled at job timeout with orphan `codesign` process, indicating next bottleneck moved to app-signing phase in sweep (`create_minimal_app`).
