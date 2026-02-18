@@ -520,6 +520,17 @@ if [ "$SKIP_SIGN" = false ]; then
             ps -p "$cpid" -o pid,state,%cpu,command 2>/dev/null
         done || echo "  None"
 
+        # Capture call stack to see what productsign is blocked on
+        echo "Call stack sample:"
+        sample "$PRODUCTSIGN_PID" 1 2>/dev/null | head -50 || echo "  sample failed"
+
+        # Check securityd state (signing often involves securityd)
+        echo "securityd state:"
+        SECURITYD_PID=$(pgrep -x securityd 2>/dev/null || true)
+        if [ -n "$SECURITYD_PID" ]; then
+            ps -p "$SECURITYD_PID" -o pid,state,%cpu,%mem 2>/dev/null
+        fi
+
         # Check if output file is growing
         if [ -f "$FINAL_PKG" ]; then
             echo "Output file size: $(du -h "$FINAL_PKG" | cut -f1)"
