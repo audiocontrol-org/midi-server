@@ -85,11 +85,19 @@ EOF
     xattr -cr "$app_root" || true
 
     if [ -n "$DEVELOPER_ID_APP" ]; then
+        local codesign_args=(--sign "$DEVELOPER_ID_APP" --options runtime --force)
+        if [ -n "$SIGN_KEYCHAIN" ]; then
+            codesign_args+=(--keychain "$SIGN_KEYCHAIN")
+        fi
+        if [ "$USE_TIMESTAMP" = true ]; then
+            codesign_args+=(--timestamp)
+        fi
+
         run_with_timeout "$CODESIGN_TIMEOUT_SECONDS" \
-            codesign --sign "$DEVELOPER_ID_APP" --options runtime --force --timestamp \
+            codesign "${codesign_args[@]}" \
             "$app_root/Contents/Resources/bin/midi-http-server"
         run_with_timeout "$CODESIGN_TIMEOUT_SECONDS" \
-            codesign --sign "$DEVELOPER_ID_APP" --options runtime --force --timestamp --deep \
+            codesign "${codesign_args[@]}" --deep \
             "$app_root"
         run_with_timeout "$CODESIGN_TIMEOUT_SECONDS" \
             codesign --verify --verbose=2 "$app_root"
