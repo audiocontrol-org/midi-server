@@ -426,8 +426,21 @@ if [ "$SKIP_SIGN" = false ]; then
     # Ensure keychain is unlocked and set as default for signing
     if [ -n "$SIGN_KEYCHAIN" ]; then
         echo "Unlocking keychain $SIGN_KEYCHAIN..."
-        security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" "$SIGN_KEYCHAIN" 2>/dev/null || true
-        security set-keychain-settings -t 3600 -u "$SIGN_KEYCHAIN" 2>/dev/null || true
+        if [ -z "${KEYCHAIN_PASSWORD:-}" ]; then
+            echo "WARNING: KEYCHAIN_PASSWORD is not set!"
+        fi
+        if security unlock-keychain -p "${KEYCHAIN_PASSWORD:-}" "$SIGN_KEYCHAIN"; then
+            echo "Keychain unlocked successfully"
+        else
+            echo "ERROR: Failed to unlock keychain (exit code: $?)"
+        fi
+        security set-keychain-settings -t 3600 -u "$SIGN_KEYCHAIN" || echo "WARNING: set-keychain-settings failed"
+
+        echo "Keychain info:"
+        security show-keychain-info "$SIGN_KEYCHAIN" 2>&1 || true
+
+        echo "Dumping partition list for installer identity..."
+        security dump-keychain "$SIGN_KEYCHAIN" 2>&1 | grep -A5 "Developer ID Installer" | head -20 || true
     fi
 
     echo "Listing signing identities..."
