@@ -33,6 +33,11 @@ on:
         required: false
         default: true
         type: boolean
+      sign_method:
+        description: "Signing method (productsign|productbuild_sign)"
+        required: false
+        default: "productsign"
+        type: string
 
 permissions:
   contents: read
@@ -109,3 +114,4 @@ jobs:
           PROBE_USE_COMPONENT_PLIST: ${{ inputs.use_component_plist && 'true' || 'false' }}
           PROBE_PAYLOAD_TYPE: ${{ inputs.payload_type || 'app' }}
           PROBE_RUN_PRODUCTBUILD: ${{ inputs.run_productbuild && 'true' || 'false' }}
+          PROBE_SIGN_METHOD: ${{ inputs.sign_method || 'productsign' }}
