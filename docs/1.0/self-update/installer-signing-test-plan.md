@@ -155,3 +155,13 @@ Follow-up (2026-02-18, branch `fix/ci-entitlements-path`):
 - Sweep with aligned import order + identity listing no longer fails at `productsign` baseline:
   - run `22127177512` shows `case_smoke_flat` and `case_flat_probe_like` passing.
   - run was then canceled at job timeout with orphan `codesign` process, indicating next bottleneck moved to app-signing phase in sweep (`create_minimal_app`).
+
+**Fix applied**: Added `--keychain` and conditional `--timestamp` to `codesign` in `create_minimal_app()`:
+- run `22127818901` - **ALL CASES PASS**
+  - `case_smoke_flat`: 1s
+  - `case_flat_probe_like`: 0s
+  - `case_app_payload_no_component`: 241s
+  - `case_app_payload_component_plist`: 241s
+  - `case_distribution_productbuild_then_sign`: 241s
+
+Root cause confirmed: `codesign` was missing `--keychain` flag and unconditionally using `--timestamp`, causing hangs during TSA server calls or keychain resolution in CI.
