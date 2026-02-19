@@ -47,7 +47,12 @@ export async function proxyToMidiServer(
     const message = err instanceof Error ? err.message : String(err)
     res.statusCode = 502
     res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ error: 'Bad Gateway', message: `Failed to proxy to MIDI server: ${message}` }))
+    res.end(
+      JSON.stringify({
+        error: 'Bad Gateway',
+        message: `Failed to proxy to MIDI server: ${message}`
+      })
+    )
   }
 }
 

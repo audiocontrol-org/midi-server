@@ -5,12 +5,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import path from 'path'
 import os from 'os'
-import type {
-  UpdateEvent,
-  UpdateService,
-  UpdateSettings,
-  UpdateStatus
-} from '@shared/types/update'
+import type { UpdateEvent, UpdateService, UpdateSettings, UpdateStatus } from '@shared/types/update'
 
 interface UpdateManagerOptions {
   currentVersion: string
@@ -509,9 +504,7 @@ interface DevBuildMetadata {
 }
 
 function extractBundleVersion(plist: string): string | null {
-  const versionMatch = plist.match(
-    /<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/i
-  )
+  const versionMatch = plist.match(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/i)
   if (versionMatch?.[1]) {
     return versionMatch[1]
   }
@@ -587,8 +580,10 @@ function isRelevantDevPlistPath(changedPath: string, devBuildPath: string): bool
     return true
   }
 
-  return normalizedChanged.startsWith(`${normalizedBase}/`) &&
+  return (
+    normalizedChanged.startsWith(`${normalizedBase}/`) &&
     normalizedChanged.endsWith('/Contents/Info.plist')
+  )
 }
 
 function normalizePath(value: string): string {

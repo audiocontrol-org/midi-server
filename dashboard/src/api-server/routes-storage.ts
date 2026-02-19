@@ -20,8 +20,9 @@ export interface RoutesConfig {
 }
 
 // Allow override via environment variable for testing
-const CONFIG_DIR = process.env.MIDI_SERVER_CONFIG_DIR
-  ?? path.join(os.homedir(), '.config', 'audiocontrol.org', 'midi-server')
+const CONFIG_DIR =
+  process.env.MIDI_SERVER_CONFIG_DIR ??
+  path.join(os.homedir(), '.config', 'audiocontrol.org', 'midi-server')
 const ROUTES_FILE = path.join(CONFIG_DIR, 'routes.json')
 
 export class RoutesStorage {

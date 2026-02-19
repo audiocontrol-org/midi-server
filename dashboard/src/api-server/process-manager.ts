@@ -34,7 +34,10 @@ export class ProcessManager {
       throw new Error('Server is already running')
     }
 
-    this.addLog(`Starting MIDI server: ${this.binaryPath} ${port === 0 ? '(auto-assign port)' : port}`, 'system')
+    this.addLog(
+      `Starting MIDI server: ${this.binaryPath} ${port === 0 ? '(auto-assign port)' : port}`,
+      'system'
+    )
 
     // Create a promise to wait for the actual port
     const portPromise = new Promise<number>((resolve) => {

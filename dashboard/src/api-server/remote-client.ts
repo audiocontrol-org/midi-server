@@ -139,7 +139,11 @@ export class RemoteClient implements MidiClient {
     }
   }
 
-  async openPort(portId: string, name: string, type: 'input' | 'output'): Promise<{ success: boolean }> {
+  async openPort(
+    portId: string,
+    name: string,
+    type: 'input' | 'output'
+  ): Promise<{ success: boolean }> {
     const index = extractPortIndex(portId)
     return this.request<{ success: boolean }>(`/midi/port/${index}`, {
       method: 'POST',

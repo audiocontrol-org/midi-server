@@ -396,9 +396,11 @@ export class ApiServer {
 
   private handleConfig(res: ServerResponse): void {
     res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({
-      midiServerPort: this.config.midiServerPort
-    }))
+    res.end(
+      JSON.stringify({
+        midiServerPort: this.config.midiServerPort
+      })
+    )
   }
 
   private readJsonBody<T>(req: IncomingMessage): Promise<T | null> {

@@ -53,7 +53,11 @@ function formatMidiMessage(data: number[]): string {
   }
 }
 
-export function PortDetail({ port, onClose, onMessagesReceived }: PortDetailProps): React.JSX.Element {
+export function PortDetail({
+  port,
+  onClose,
+  onMessagesReceived
+}: PortDetailProps): React.JSX.Element {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const clientRef = useRef(createClient())
@@ -131,10 +135,7 @@ export function PortDetail({ port, onClose, onMessagesReceived }: PortDetailProp
             {port.type === 'input' ? 'Input' : 'Output'} • ID: {port.portId}
           </p>
         </div>
-        <button
-          onClick={onClose}
-          className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm"
-        >
+        <button onClick={onClose} className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm">
           Close Port
         </button>
       </div>

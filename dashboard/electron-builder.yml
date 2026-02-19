@@ -14,8 +14,8 @@ files:
 asarUnpack:
   - resources/**
 extraResources:
-  - from: "../build/MidiHttpServer_artefacts/Release/MidiHttpServer"
-    to: "bin/midi-http-server"
+  - from: '../build/MidiHttpServer_artefacts/Release/MidiHttpServer'
+    to: 'bin/midi-http-server'
 win:
   executableName: midi-server-dashboard
 nsis:

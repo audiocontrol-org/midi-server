@@ -59,8 +59,14 @@ function getBuildInfo() {
   return { version, commit, buildTime, serial: `v${version}-${commit}-${buildDate}` }
 }
 
-async function startServer(midiPort: number, forcedApiPort?: number | null): Promise<{ server: ViteDevServer; apiPort: number }> {
-  const midiServerBinaryPath = resolve(ROOT_DIR, '../build/MidiHttpServer_artefacts/Release/MidiHttpServer')
+async function startServer(
+  midiPort: number,
+  forcedApiPort?: number | null
+): Promise<{ server: ViteDevServer; apiPort: number }> {
+  const midiServerBinaryPath = resolve(
+    ROOT_DIR,
+    '../build/MidiHttpServer_artefacts/Release/MidiHttpServer'
+  )
 
   const server = await createViteServer({
     configFile: false,
@@ -125,11 +131,13 @@ async function main() {
   console.log('Finding available ports...')
 
   // Support forced ports for integration testing
-  const forcedMidiPort = process.env.FORCE_MIDI_PORT ? parseInt(process.env.FORCE_MIDI_PORT, 10) : null
+  const forcedMidiPort = process.env.FORCE_MIDI_PORT
+    ? parseInt(process.env.FORCE_MIDI_PORT, 10)
+    : null
   const forcedApiPort = process.env.FORCE_API_PORT ? parseInt(process.env.FORCE_API_PORT, 10) : null
 
   // Get available ports from OS (or use forced ports)
-  const midiPort = forcedMidiPort ?? await getAvailablePort()
+  const midiPort = forcedMidiPort ?? (await getAvailablePort())
 
   console.log(`  MIDI server port: ${midiPort}`)
 

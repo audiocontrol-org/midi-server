@@ -26,17 +26,19 @@ export function apiServerPlugin(options: ApiServerPluginOptions): Plugin {
       apiServer = new ApiServer(config, options.buildInfo)
 
       // Add middleware to handle API routes (runs before Vite's middleware)
-      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        const url = req.url || ''
+      server.middlewares.use(
+        async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+          const url = req.url || ''
 
-        // Only handle /api/* and /midi/* routes
-        if (url.startsWith('/api') || url.startsWith('/midi')) {
-          // Forward to our API server's request handler and wait for it to complete
-          await apiServer!.handleRequest(req, res)
-        } else {
-          next()
+          // Only handle /api/* and /midi/* routes
+          if (url.startsWith('/api') || url.startsWith('/midi')) {
+            // Forward to our API server's request handler and wait for it to complete
+            await apiServer!.handleRequest(req, res)
+          } else {
+            next()
+          }
         }
-      })
+      )
 
       // Initialize routing services after Vite's HTTP server starts listening
       server.httpServer?.once('listening', () => {

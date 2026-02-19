@@ -96,7 +96,11 @@ export class MidiServerClient {
     }
   }
 
-  async openPort(portId: string, name: string, type: 'input' | 'output'): Promise<{ success: boolean }> {
+  async openPort(
+    portId: string,
+    name: string,
+    type: 'input' | 'output'
+  ): Promise<{ success: boolean }> {
     // Server expects JSON body with name and type
     // Use compact JSON (no spaces) for the body since server's parser is basic
     const body = JSON.stringify({ name, type })
@@ -241,16 +245,25 @@ export class ApiClient {
   }
 
   // Remote server management endpoints
-  async getRemoteServerStatus(serverUrl: string): Promise<{ running: boolean; pid: number | null; port: number | null }> {
+  async getRemoteServerStatus(
+    serverUrl: string
+  ): Promise<{ running: boolean; pid: number | null; port: number | null }> {
     const encodedUrl = encodeURIComponent(serverUrl)
-    return this.request<{ running: boolean; pid: number | null; port: number | null }>(`/api/servers/${encodedUrl}/status`)
+    return this.request<{ running: boolean; pid: number | null; port: number | null }>(
+      `/api/servers/${encodedUrl}/status`
+    )
   }
 
-  async startRemoteServer(serverUrl: string): Promise<{ running: boolean; pid: number | null; port: number | null }> {
+  async startRemoteServer(
+    serverUrl: string
+  ): Promise<{ running: boolean; pid: number | null; port: number | null }> {
     const encodedUrl = encodeURIComponent(serverUrl)
-    return this.request<{ running: boolean; pid: number | null; port: number | null }>(`/api/servers/${encodedUrl}/start`, {
-      method: 'POST'
-    })
+    return this.request<{ running: boolean; pid: number | null; port: number | null }>(
+      `/api/servers/${encodedUrl}/start`,
+      {
+        method: 'POST'
+      }
+    )
   }
 
   async stopRemoteServer(serverUrl: string): Promise<{ success: boolean }> {

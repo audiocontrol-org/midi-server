@@ -12,7 +12,9 @@ export type { ApiServerConfig, ServerStatus, BuildInfo, LogEntry, LogSeverity } 
 const DEFAULT_API_PORT = 3001
 const DEFAULT_MIDI_PORT = 0 // Let OS assign an available port
 
-export function createApiServer(config: Partial<ApiServerConfig> & { buildInfo: BuildInfo }): ApiServer {
+export function createApiServer(
+  config: Partial<ApiServerConfig> & { buildInfo: BuildInfo }
+): ApiServer {
   const fullConfig: ApiServerConfig = {
     apiPort: config.apiPort ?? DEFAULT_API_PORT,
     midiServerPort: config.midiServerPort ?? DEFAULT_MIDI_PORT,
@@ -29,7 +31,10 @@ async function main(): Promise<void> {
   const midiPort = parseInt(process.env.MIDI_PORT || String(DEFAULT_MIDI_PORT), 10)
 
   // Default binary path for development
-  const defaultBinaryPath = join(process.cwd(), '../build/MidiHttpServer_artefacts/Release/MidiHttpServer')
+  const defaultBinaryPath = join(
+    process.cwd(),
+    '../build/MidiHttpServer_artefacts/Release/MidiHttpServer'
+  )
   const binaryPath = process.env.MIDI_BINARY_PATH || defaultBinaryPath
 
   console.log('Starting API server...')
@@ -61,8 +66,9 @@ async function main(): Promise<void> {
 }
 
 // Check if this module is being run directly
-const isMainModule = process.argv[1]?.endsWith('api-server/index.ts') ||
-                     process.argv[1]?.endsWith('api-server/index.js')
+const isMainModule =
+  process.argv[1]?.endsWith('api-server/index.ts') ||
+  process.argv[1]?.endsWith('api-server/index.js')
 
 if (isMainModule) {
   main().catch((err) => {

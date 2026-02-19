@@ -81,9 +81,7 @@ export function ServerTabs({
               />
 
               {/* Server name */}
-              <span className="font-medium">
-                {isLocal ? 'Local' : server.serverName}
-              </span>
+              <span className="font-medium">{isLocal ? 'Local' : server.serverName}</span>
 
               {/* Local badge */}
               {isLocal && (

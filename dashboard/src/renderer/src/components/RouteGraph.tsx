@@ -196,7 +196,7 @@ export function RouteGraph({
 
   if (loading) {
     return (
-      <div className="bg-gray-800 rounded-lg p-4 h-[500px] flex items-center justify-center">
+      <div className="bg-gray-800 rounded-lg p-4 h-full min-h-[400px] flex items-center justify-center">
         <div className="text-gray-400">Loading graph...</div>
       </div>
     )
@@ -204,7 +204,7 @@ export function RouteGraph({
 
   return (
     <div
-      className="bg-gray-800 rounded-lg overflow-hidden h-[500px]"
+      className="bg-gray-800 rounded-lg overflow-hidden h-full min-h-[400px]"
       onKeyDown={onKeyDown}
       tabIndex={0}
     >
