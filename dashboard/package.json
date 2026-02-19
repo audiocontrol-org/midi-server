@@ -4,6 +4,7 @@
   "description": "MIDI Server Dashboard - Electron and Web",
   "main": "./out/main/index.js",
   "author": "audiocontrol.org",
+  "homepage": "https://github.com/audiocontrol-org/midi-server",
   "scripts": {
     "start": "tsx scripts/server.ts",
     "start:web": "tsx scripts/server.ts --web",
