@@ -162,6 +162,14 @@ log "PACKAGE_PATH: ${PACKAGE_PATH:-not set}"
 log "DSTROOT: ${DSTROOT:-not set}"
 log "DSTVOLUME: ${DSTVOLUME:-not set}"
 
+# Log package hash for build identification
+if [ -n "$PACKAGE_PATH" ] && [ -f "$PACKAGE_PATH" ]; then
+    PKG_HASH=$(shasum -a 256 "$PACKAGE_PATH" 2>/dev/null | cut -c1-16)
+    PKG_SIZE=$(stat -f%z "$PACKAGE_PATH" 2>/dev/null || echo "unknown")
+    log "Package SHA256 (first 16): ${PKG_HASH:-unknown}"
+    log "Package size: $PKG_SIZE bytes"
+fi
+
 # =============================================================================
 # Main Script
 # =============================================================================
@@ -196,6 +204,14 @@ fi
 log "--- Checking for existing installation ---"
 if [ -d "$APP_PATH" ]; then
     log "Found existing installation at $APP_PATH"
+    # Log existing build info before removal
+    EXISTING_BUILD_INFO="$APP_PATH/Contents/Resources/build-info.txt"
+    if [ -f "$EXISTING_BUILD_INFO" ]; then
+        log "Existing installation build info:"
+        while IFS= read -r line; do log "  $line"; done < "$EXISTING_BUILD_INFO"
+    else
+        log "No build info found in existing installation (pre-0.2.0 build)"
+    fi
     log "Removing old installation..."
     rm -rf "$APP_PATH"
     log "Old installation removed"

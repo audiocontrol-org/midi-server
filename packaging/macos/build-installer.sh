@@ -216,12 +216,26 @@ else
     echo "=== Step 2: Skipping Electron build (--skip-build) ==="
 fi
 
-# Find the built Electron app
-ELECTRON_APP_PATH=$(find "$DASHBOARD_DIR/dist" -name "*.app" -type d 2>/dev/null | head -1)
-if [ -z "$ELECTRON_APP_PATH" ] || [ ! -d "$ELECTRON_APP_PATH" ]; then
-    echo "Error: Electron app not found in $DASHBOARD_DIR/dist"
-    exit 1
+# Find the built Electron app - prefer arm64 for Apple Silicon
+# Check hardware architecture to select appropriate build
+if /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null | grep -q "1"; then
+    BUILD_ARCH="arm64"
+    ELECTRON_APP_PATH="$DASHBOARD_DIR/dist/mac-arm64/MidiServer.app"
+else
+    BUILD_ARCH="x64"
+    ELECTRON_APP_PATH="$DASHBOARD_DIR/dist/mac/MidiServer.app"
 fi
+
+if [ ! -d "$ELECTRON_APP_PATH" ]; then
+    echo "Error: Electron app not found at $ELECTRON_APP_PATH"
+    echo "Looking for any available app..."
+    ELECTRON_APP_PATH=$(find "$DASHBOARD_DIR/dist" -name "*.app" -type d 2>/dev/null | head -1)
+    if [ -z "$ELECTRON_APP_PATH" ] || [ ! -d "$ELECTRON_APP_PATH" ]; then
+        echo "Error: No Electron app found in $DASHBOARD_DIR/dist"
+        exit 1
+    fi
+fi
+echo "Build architecture: $BUILD_ARCH"
 echo "Found Electron app: $ELECTRON_APP_PATH"
 
 # Verify CLI was bundled
@@ -271,6 +285,18 @@ cp -R "$ELECTRON_APP_PATH" "$STAGING_DIR$APP_INSTALL_LOCATION/"
 STAGED_APP="$STAGING_DIR$APP_INSTALL_LOCATION/$(basename "$ELECTRON_APP_PATH")"
 echo "Staged App: $STAGED_APP"
 
+# Generate and embed build ID for installation diagnostics
+BUILD_ID="$(date -u '+%Y%m%d-%H%M%S')-$(uuidgen | cut -c1-8)"
+BUILD_INFO_FILE="$STAGED_APP/Contents/Resources/build-info.txt"
+cat > "$BUILD_INFO_FILE" <<EOF
+build_id=$BUILD_ID
+build_timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+version=$VERSION
+arch=$BUILD_ARCH
+builder=$(whoami)@$(hostname)
+EOF
+echo "Embedded build ID: $BUILD_ID"
+
 # Avoid AppleDouble metadata files (._*) in package payload; these can break
 # code signature validation during notarization.
 xattr -cr "$STAGED_APP" || true
@@ -289,8 +315,12 @@ if [ "$SKIP_SIGN" = false ]; then
     if [ -n "$SIGN_KEYCHAIN" ]; then
         CODESIGN_ARGS+=(--keychain "$SIGN_KEYCHAIN")
     fi
-    if [ "$CODESIGN_USE_TIMESTAMP" = true ]; then
+    # Timestamps are required for notarization. Enable by default if notarization
+    # credentials are available, or if explicitly requested.
+    if [ "$CODESIGN_USE_TIMESTAMP" = true ] || { [ -n "$APPLE_ID" ] && [ "$SKIP_NOTARIZE" = false ]; }; then
         CODESIGN_ARGS+=(--timestamp)
+    else
+        CODESIGN_ARGS+=(--timestamp=none)
     fi
 
     echo "Signing (keychain: ${SIGN_KEYCHAIN:-default}, timestamp: $CODESIGN_USE_TIMESTAMP)..."

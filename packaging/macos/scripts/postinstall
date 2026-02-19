@@ -189,6 +189,15 @@ The installation may be incomplete."
 fi
 log "Found app at $APP_PATH"
 
+# Log build info for diagnostics
+BUILD_INFO_FILE="$APP_PATH/Contents/Resources/build-info.txt"
+if [ -f "$BUILD_INFO_FILE" ]; then
+    log "--- Build Information ---"
+    while IFS= read -r line; do log "$line"; done < "$BUILD_INFO_FILE"
+else
+    log "WARNING: No build-info.txt found (pre-0.2.0 build or build info missing)"
+fi
+
 # Verify bundled binary exists
 log "Checking for bundled binary at: $BINARY_PATH"
 if [ -f "$BINARY_PATH" ]; then

@@ -35,6 +35,7 @@ mac:
       arch:
         - arm64
         - x64
+  entitlements: ../packaging/macos/entitlements.plist
   entitlementsInherit: ../packaging/macos/entitlements.plist
   extendInfo:
     NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
