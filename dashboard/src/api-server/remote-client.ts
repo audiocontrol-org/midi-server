@@ -46,6 +46,12 @@ export class RemoteClient implements MidiClient {
   private defaultTimeout: number
 
   constructor(serverUrl: string, timeout = 5000) {
+    // Validate URL format
+    try {
+      new URL(serverUrl)
+    } catch {
+      throw new Error(`Invalid server URL: ${serverUrl}`)
+    }
     // Ensure URL ends without trailing slash
     this.baseUrl = serverUrl.replace(/\/$/, '')
     this.defaultTimeout = timeout

@@ -40,6 +40,10 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     super()
     this.storage = storage
     this.midiServerPort = midiServerPort
+    console.log(`[RoutingEngine] Initialized with midiServerPort=${midiServerPort}`)
+    if (!midiServerPort || isNaN(midiServerPort)) {
+      console.error(`[RoutingEngine] WARNING: Invalid midiServerPort: ${midiServerPort}`)
+    }
   }
 
   start(): void {
