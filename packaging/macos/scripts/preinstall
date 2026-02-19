@@ -2,25 +2,222 @@
 # Pre-install script for MIDI Server
 # Quits the running app if it exists
 
+# =============================================================================
+# Logging and Error Handling Setup
+# =============================================================================
+LOG_FILE="/tmp/MidiServer-install.log"
+SCRIPT_NAME="preinstall"
+GITHUB_REPO="audiocontrol-org/midi-server"
+
+log() {
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [$SCRIPT_NAME] $1" | tee -a "$LOG_FILE"
+}
+
+log_error() {
+    log "ERROR: $1"
+}
+
+# Get actual hardware architecture (not affected by Rosetta)
+get_hardware_arch() {
+    # Check if running on Apple Silicon hardware
+    if /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null | grep -q "1"; then
+        echo "arm64 (Apple Silicon)"
+    else
+        echo "x86_64 (Intel)"
+    fi
+}
+
+# Get process architecture (may differ from hardware under Rosetta)
+get_process_arch() {
+    uname -m
+}
+
+url_encode() {
+    python3 -c "import urllib.parse; print(urllib.parse.quote('''$1''', safe=''))"
+}
+
+copy_log_to_clipboard() {
+    if [ -f "$LOG_FILE" ]; then
+        cat "$LOG_FILE" | pbcopy
+        return 0
+    fi
+    return 1
+}
+
+generate_github_issue_url() {
+    local error_message="$1"
+
+    # Gather system info
+    local macos_version=$(sw_vers -productVersion)
+    local macos_build=$(sw_vers -buildVersion)
+    local hw_arch=$(get_hardware_arch)
+    local proc_arch=$(get_process_arch)
+
+    # Build issue body (without log contents - user will paste from clipboard)
+    local body="## Installation Error
+
+**Error Message:**
+\`\`\`
+${error_message}
+\`\`\`
+
+## System Information
+
+| Property | Value |
+|----------|-------|
+| macOS Version | ${macos_version} (${macos_build}) |
+| Hardware | ${hw_arch} |
+| Process | ${proc_arch} |
+| Script | ${SCRIPT_NAME} |
+
+## Installation Log
+
+> **The log file contents have been copied to your clipboard.**
+> Please paste them below (Cmd+V):
+
+\`\`\`
+PASTE LOG CONTENTS HERE
+\`\`\`
+
+## Additional Context
+
+<!-- Please add any additional context about what you were doing when this error occurred -->
+"
+
+    local title="Installation failed: ${SCRIPT_NAME} error"
+    local encoded_title=$(url_encode "$title")
+    local encoded_body=$(url_encode "$body")
+
+    echo "https://github.com/${GITHUB_REPO}/issues/new?title=${encoded_title}&body=${encoded_body}&labels=bug,installer"
+}
+
+show_error_dialog() {
+    local message="$1"
+    local github_url=$(generate_github_issue_url "$message")
+
+    osascript <<EOF
+set keepOpen to true
+repeat while keepOpen
+    set buttonPressed to button returned of (display dialog "MidiServer Installation Failed
+
+$message
+
+Log file location:
+$LOG_FILE" buttons {"Report Issue", "Open Log Folder", "OK"} default button "OK" with icon stop with title "Installation Error")
+
+    if buttonPressed is "Open Log Folder" then
+        do shell script "open -R '$LOG_FILE'"
+    else if buttonPressed is "Report Issue" then
+        do shell script "cat '$LOG_FILE' | pbcopy"
+        do shell script "open '$github_url'"
+        display dialog "The installation log has been copied to your clipboard.
+
+When the GitHub issue page opens, paste (Cmd+V) the log contents into the issue where indicated." buttons {"OK"} default button "OK" with icon note with title "Log Copied"
+    else
+        set keepOpen to false
+    end if
+end repeat
+EOF
+}
+
+handle_error() {
+    local exit_code=$?
+    local line_number=$1
+    log_error "Script failed at line $line_number with exit code $exit_code"
+    log "--- Installation failed ---"
+    show_error_dialog "Preinstall script failed at line $line_number.
+
+Exit code: $exit_code"
+    exit $exit_code
+}
+
+# Trap errors
+trap 'handle_error $LINENO' ERR
+
+# =============================================================================
+# Initialize Log
+# =============================================================================
+echo "" >> "$LOG_FILE"
+echo "==============================================================================" >> "$LOG_FILE"
+log "=== MidiServer Preinstall Script Started ==="
+log "Log file: $LOG_FILE"
+
+# System information
+log "--- System Information ---"
+log "macOS Version: $(sw_vers -productVersion)"
+log "Build: $(sw_vers -buildVersion)"
+log "Hardware Architecture: $(get_hardware_arch)"
+log "Process Architecture: $(get_process_arch)"
+log "Kernel: $(uname -r)"
+log "User: $(whoami)"
+log "Effective UID: $EUID"
+log "Working Directory: $(pwd)"
+
+# Installer environment
+log "--- Installer Environment ---"
+log "INSTALLER_TEMP: ${INSTALLER_TEMP:-not set}"
+log "PACKAGE_PATH: ${PACKAGE_PATH:-not set}"
+log "DSTROOT: ${DSTROOT:-not set}"
+log "DSTVOLUME: ${DSTVOLUME:-not set}"
+
+# Log package hash for build identification
+if [ -n "$PACKAGE_PATH" ] && [ -f "$PACKAGE_PATH" ]; then
+    PKG_HASH=$(shasum -a 256 "$PACKAGE_PATH" 2>/dev/null | cut -c1-16)
+    PKG_SIZE=$(stat -f%z "$PACKAGE_PATH" 2>/dev/null || echo "unknown")
+    log "Package SHA256 (first 16): ${PKG_HASH:-unknown}"
+    log "Package size: $PKG_SIZE bytes"
+fi
+
+# =============================================================================
+# Main Script
+# =============================================================================
 APP_PATH="/Applications/AudioControl/MidiServer.app"
 BUNDLE_ID="org.audiocontrol.midi-server"
 
+log "--- Configuration ---"
+log "APP_PATH: $APP_PATH"
+log "BUNDLE_ID: $BUNDLE_ID"
+
 # Quit the app if it's running
+log "--- Checking for running app ---"
 if pgrep -f "MidiServer.app" > /dev/null 2>&1; then
-    echo "Quitting running MidiServer..."
+    log "Found running MidiServer, attempting graceful quit..."
     osascript -e "quit app \"MidiServer\"" 2>/dev/null || true
 
     # Wait a moment for graceful shutdown
+    log "Waiting for graceful shutdown..."
     sleep 2
 
     # Force kill if still running
-    pkill -f "MidiServer.app" 2>/dev/null || true
+    if pgrep -f "MidiServer.app" > /dev/null 2>&1; then
+        log "App still running, force killing..."
+        pkill -f "MidiServer.app" 2>/dev/null || true
+    fi
+    log "App quit complete"
+else
+    log "No running MidiServer found"
 fi
 
 # Remove old app to ensure clean installation
+log "--- Checking for existing installation ---"
 if [ -d "$APP_PATH" ]; then
-    echo "Removing old installation at $APP_PATH..."
+    log "Found existing installation at $APP_PATH"
+    # Log existing build info before removal
+    EXISTING_BUILD_INFO="$APP_PATH/Contents/Resources/build-info.txt"
+    if [ -f "$EXISTING_BUILD_INFO" ]; then
+        log "Existing installation build info:"
+        while IFS= read -r line; do log "  $line"; done < "$EXISTING_BUILD_INFO"
+    else
+        log "No build info found in existing installation (pre-0.2.0 build)"
+    fi
+    log "Removing old installation..."
     rm -rf "$APP_PATH"
+    log "Old installation removed"
+else
+    log "No existing installation found at $APP_PATH"
 fi
 
+log "=== Preinstall completed successfully ==="
 exit 0

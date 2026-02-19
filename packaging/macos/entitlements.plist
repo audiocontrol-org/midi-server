@@ -2,10 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Required for V8 JavaScript engine JIT compilation -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Required for V8's executable memory allocation -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Required for loading Electron's dynamic libraries -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
     <!-- Required for HTTP server operation -->
     <key>com.apple.security.network.server</key>
     <true/>
-    <!-- Required for potential outbound connections -->
+    <!-- Required for outbound connections (auto-updates, etc.) -->
     <key>com.apple.security.network.client</key>
     <true/>
 </dict>
