@@ -90,13 +90,14 @@ export class ApiServer {
   private initializeRoutingServices(localUrl: string): void {
     this.routesStorage = new RoutesStorage()
     this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
-    this.routingEngine = new RoutingEngine(this.routesStorage, localUrl)
+    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
       routes: this.routesStorage,
       routingEngine: this.routingEngine,
-      localServerUrl: localUrl
+      localServerUrl: localUrl,
+      localMidiServerPort: this.config.midiServerPort
     })
 
     // Start services
@@ -209,6 +210,9 @@ export class ApiServer {
 
       // Discovery routes
       if (this.routingHandlers) {
+        if (path === '/api/local/ports' && req.method === 'GET') {
+          return await this.routingHandlers.handleLocalPorts(res)
+        }
         if (path === '/api/discovery/servers' && req.method === 'GET') {
           return this.routingHandlers.handleDiscoveryServers(res)
         }

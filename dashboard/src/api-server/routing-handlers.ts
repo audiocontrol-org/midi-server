@@ -2,17 +2,18 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { DiscoveryService } from './discovery'
 import type { RoutesStorage, Route, RouteEndpoint } from './routes-storage'
 import type { RoutingEngine } from './routing-engine'
-import { getRemoteClient } from './remote-client'
+import { getMidiClient } from './client-factory'
 
 interface RoutingServices {
   discovery: DiscoveryService
   routes: RoutesStorage
   routingEngine: RoutingEngine
   localServerUrl: string
+  localMidiServerPort: number
 }
 
 export function createRoutingHandlers(services: RoutingServices) {
-  const { discovery, routes, routingEngine, localServerUrl } = services
+  const { discovery, routes, routingEngine, localServerUrl, localMidiServerPort } = services
 
   function sendJson(res: ServerResponse, data: unknown, status = 200): void {
     res.statusCode = status
@@ -144,10 +145,21 @@ export function createRoutingHandlers(services: RoutingServices) {
   }
 
   // Remote server proxy endpoints
+  async function handleLocalPorts(res: ServerResponse): Promise<void> {
+    try {
+      const client = getMidiClient('local', localMidiServerPort)
+      const ports = await client.getPorts()
+      sendJson(res, ports)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to fetch local ports: ${message}`, 502)
+    }
+  }
+
   async function handleRemoteServerPorts(res: ServerResponse, encodedUrl: string): Promise<void> {
     try {
       const serverUrl = decodeURIComponent(encodedUrl)
-      const client = getRemoteClient(serverUrl)
+      const client = getMidiClient(serverUrl, localMidiServerPort)
       const ports = await client.getPorts()
       sendJson(res, ports)
     } catch (err) {
@@ -159,7 +171,7 @@ export function createRoutingHandlers(services: RoutingServices) {
   async function handleRemoteServerHealth(res: ServerResponse, encodedUrl: string): Promise<void> {
     try {
       const serverUrl = decodeURIComponent(encodedUrl)
-      const client = getRemoteClient(serverUrl)
+      const client = getMidiClient(serverUrl, localMidiServerPort)
       const health = await client.health()
       sendJson(res, health)
     } catch (err) {
@@ -183,7 +195,7 @@ export function createRoutingHandlers(services: RoutingServices) {
         return
       }
 
-      const client = getRemoteClient(serverUrl)
+      const client = getMidiClient(serverUrl, localMidiServerPort)
       const result = await client.sendMessage(portId, body.message)
       sendJson(res, result)
     } catch (err) {
@@ -255,6 +267,7 @@ export function createRoutingHandlers(services: RoutingServices) {
     handleDiscoveryServers,
     handleDiscoveryStatus,
     handleDiscoverySetName,
+    handleLocalPorts,
     handleGetRoutes,
     handleCreateRoute,
     handleUpdateRoute,

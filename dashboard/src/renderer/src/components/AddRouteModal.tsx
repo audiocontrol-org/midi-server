@@ -102,17 +102,19 @@ export function AddRouteModal({
 
     const selectedSourcePort = sourcePorts.find((p) => generatePortId(p) === sourcePort)
     const selectedDestPort = destPorts.find((p) => generatePortId(p) === destPort)
+    const selectedSourceServer = servers.find((s) => s.apiUrl === sourceServer)
+    const selectedDestServer = servers.find((s) => s.apiUrl === destServer)
 
     if (!selectedSourcePort || !selectedDestPort) return
 
     const source: RouteEndpoint = {
-      serverUrl: sourceServer,
+      serverUrl: selectedSourceServer?.isLocal ? 'local' : sourceServer,
       portId: sourcePort,
       portName: selectedSourcePort.name
     }
 
     const destination: RouteEndpoint = {
-      serverUrl: destServer,
+      serverUrl: selectedDestServer?.isLocal ? 'local' : destServer,
       portId: destPort,
       portName: selectedDestPort.name
     }
@@ -120,8 +122,7 @@ export function AddRouteModal({
     onSave(source, destination)
   }
 
-  const isValid =
-    sourceServer && sourcePort && destServer && destPort && sourceServer !== destServer
+  const isValid = Boolean(sourceServer && sourcePort && destServer && destPort)
 
   const sortedServers = [...servers].sort((a, b) => {
     if (a.isLocal !== b.isLocal) return a.isLocal ? -1 : 1
@@ -220,13 +221,6 @@ export function AddRouteModal({
             ))}
           </select>
         </div>
-
-        {/* Same server warning */}
-        {sourceServer && destServer && sourceServer === destServer && (
-          <p className="text-yellow-500 text-sm mb-4">
-            Source and destination must be different servers
-          </p>
-        )}
 
         {/* Buttons */}
         <div className="flex justify-end gap-3">
