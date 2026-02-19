@@ -57,11 +57,8 @@ linux:
   maintainer: audiocontrol.org
   category: Audio
   icon: ../packaging/linux/resources/icons
-  desktop:
-    Name: MIDI Server
-    Comment: HTTP-to-MIDI bridge server
-    Categories: Audio;AudioVideo;
-    StartupWMClass: midi-server
+  synopsis: HTTP-to-MIDI bridge server
+  description: MIDI Server provides an HTTP API for sending and receiving MIDI messages, including SysEx.
 deb:
   packageName: midi-server
   artifactName: ${name}_${version}_${arch}.${ext}
