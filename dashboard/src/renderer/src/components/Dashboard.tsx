@@ -12,6 +12,7 @@ import { BuildInfoButton } from '@/components/BuildInfoButton'
 import { BuildInfoModal } from '@/components/BuildInfoModal'
 import { ServerTabs } from '@/components/ServerTabs'
 import { RoutingPanel } from '@/components/RoutingPanel'
+import { RouteGraph } from '@/components/RouteGraph'
 import { AddRouteModal } from '@/components/AddRouteModal'
 import {
   createClient,
@@ -29,9 +30,10 @@ const SERVER_STATUS_CHECK_INTERVAL = 10000
 export function Dashboard(): React.JSX.Element {
   const platform = usePlatform()
   const update = useUpdateStatus()
-  const { status, ports, connect, disconnect, refresh } = useServerConnection({ autoConnect: false })
+  const { status, ports, connect, disconnect, refresh } = useServerConnection({
+    autoConnect: false
+  })
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
-  const [serverError, setServerError] = useState<string | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
@@ -46,12 +48,15 @@ export function Dashboard(): React.JSX.Element {
   const [discoveredServers, setDiscoveredServers] = useState<DiscoveredServer[]>([])
   const [selectedServerUrl, setSelectedServerUrl] = useState<string | null>(null)
   const [localServerUrl, setLocalServerUrl] = useState<string | null>(null)
-  const [serverStatuses, setServerStatuses] = useState<Map<string, 'connected' | 'disconnected' | 'checking'>>(new Map())
+  const [serverStatuses, setServerStatuses] = useState<
+    Map<string, 'connected' | 'disconnected' | 'checking'>
+  >(new Map())
   const [remotePorts, setRemotePorts] = useState<PortsResponse | null>(null)
 
   // Routing state
   const [routes, setRoutes] = useState<Route[]>([])
   const [isAddRouteModalOpen, setIsAddRouteModalOpen] = useState(false)
+  const [routeViewMode, setRouteViewMode] = useState<'list' | 'graph'>('list')
 
   // Fetch build info on mount
   useEffect(() => {
@@ -200,11 +205,9 @@ export function Dashboard(): React.JSX.Element {
       try {
         const process = await platform.startServer(port)
         setServerProcess(process)
-        setServerError(null)
         connect()
       } catch (err) {
         console.error('Failed to start server:', err)
-        setServerError(err instanceof Error ? err.message : 'Failed to start server')
       }
     },
     [platform, connect]
@@ -214,13 +217,11 @@ export function Dashboard(): React.JSX.Element {
     try {
       await platform.stopServer()
       setServerProcess({ running: false, pid: null, port: null, url: null })
-      setServerError(null)
       disconnect()
       setOpenPorts(new Map())
       setSelectedPortId(null)
     } catch (err) {
       console.error('Failed to stop server:', err)
-      setServerError(err instanceof Error ? err.message : 'Failed to stop server')
     }
   }, [platform, disconnect])
 
@@ -312,28 +313,22 @@ export function Dashboard(): React.JSX.Element {
     }
   }, [])
 
-  const handleAddRoute = useCallback(
-    async (source: RouteEndpoint, destination: RouteEndpoint) => {
-      try {
-        const response = await apiClientRef.current.createRoute({
-          enabled: true,
-          source,
-          destination
-        })
-        setRoutes((prev) => [...prev, response.route])
-        setIsAddRouteModalOpen(false)
-      } catch (err) {
-        console.error('Failed to create route:', err)
-      }
-    },
-    []
-  )
+  const handleAddRoute = useCallback(async (source: RouteEndpoint, destination: RouteEndpoint) => {
+    try {
+      const response = await apiClientRef.current.createRoute({
+        enabled: true,
+        source,
+        destination
+      })
+      setRoutes((prev) => [...prev, response.route])
+      setIsAddRouteModalOpen(false)
+    } catch (err) {
+      console.error('Failed to create route:', err)
+    }
+  }, [])
 
   const fetchServerPorts = useCallback(
     async (serverUrl: string): Promise<{ inputs: MidiPort[]; outputs: MidiPort[] }> => {
-      if (serverUrl === 'local') {
-        return apiClientRef.current.getLocalPorts()
-      }
       if (serverUrl === localServerUrl && ports) {
         return ports
       }
@@ -422,7 +417,6 @@ export function Dashboard(): React.JSX.Element {
           <ServerControl
             connectionStatus={status}
             serverProcess={serverProcess}
-            serverError={serverError}
             canManageServer={platform.canManageServer}
             onConnect={connect}
             onDisconnect={disconnect}
@@ -436,7 +430,10 @@ export function Dashboard(): React.JSX.Element {
         {!isViewingLocalServer && selectedServerUrl && (
           <RemoteServerControl
             serverUrl={selectedServerUrl}
-            serverName={discoveredServers.find((s) => s.apiUrl === selectedServerUrl)?.serverName ?? 'Remote Server'}
+            serverName={
+              discoveredServers.find((s) => s.apiUrl === selectedServerUrl)?.serverName ??
+              'Remote Server'
+            }
             connectionStatus={serverStatuses.get(selectedServerUrl) ?? 'disconnected'}
             getStatus={getRemoteServerStatus}
             startServer={startRemoteServer}
@@ -496,16 +493,63 @@ export function Dashboard(): React.JSX.Element {
           </div>
         )}
 
-        {/* Routing Panel */}
-        {discoveredServers.length > 0 && (
-          <RoutingPanel
-            routes={routes}
-            servers={discoveredServers}
-            onToggleRoute={handleToggleRoute}
-            onDeleteRoute={handleDeleteRoute}
-            onAddRoute={() => setIsAddRouteModalOpen(true)}
-          />
-        )}
+        {/* Routing Panel or Graph */}
+        {discoveredServers.length >= 1 &&
+          (routeViewMode === 'list' ? (
+            <RoutingPanel
+              routes={routes}
+              servers={discoveredServers}
+              onToggleRoute={handleToggleRoute}
+              onDeleteRoute={handleDeleteRoute}
+              onAddRoute={() => setIsAddRouteModalOpen(true)}
+              viewMode={routeViewMode}
+              onViewModeChange={setRouteViewMode}
+            />
+          ) : (
+            <div className="space-y-2">
+              <div className="bg-gray-800 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-white">MIDI Routes</h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setRouteViewMode('list')}
+                      className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                      title="Switch to list view"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 6h16M4 12h16M4 18h16"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setIsAddRouteModalOpen(true)}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition-colors"
+                    >
+                      Add Route
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <RouteGraph
+                routes={routes}
+                servers={discoveredServers}
+                serverStatuses={serverStatuses}
+                fetchServerPorts={fetchServerPorts}
+                onCreateRoute={handleAddRoute}
+                onDeleteRoute={handleDeleteRoute}
+                onToggleRoute={handleToggleRoute}
+              />
+            </div>
+          ))}
 
         {/* Add Route Modal */}
         <AddRouteModal
