@@ -53,16 +53,22 @@ function useStableArray<T>(
   return prevRef.current
 }
 
-const SERVER_SPACING_X = 350
-const PORT_SPACING_Y = 45
-const SERVER_START_Y = 50
-const PORT_START_Y = 120
+// Layout constants
+const SERVER_SPACING_X = 280
+const SERVER_HEADER_HEIGHT = 44
+const SERVER_PADDING_X = 16
+const SERVER_PADDING_Y = 12
+const PORT_NODE_WIDTH = 180
+const PORT_NODE_HEIGHT = 36
+const PORT_SPACING_Y = 8
+const SERVER_WIDTH = PORT_NODE_WIDTH + SERVER_PADDING_X * 2
 
 export interface ServerNodeData extends Record<string, unknown> {
   label: string
   apiUrl: string
   isLocal: boolean
   connectionStatus: 'connected' | 'disconnected' | 'checking'
+  portCount: number
 }
 
 export interface PortNodeData extends Record<string, unknown> {
@@ -155,24 +161,12 @@ export function useRouteGraph({
     servers.forEach((server, serverIndex) => {
       const serverNodeId = `server:${server.apiUrl}`
       const serverX = savedPositions.get(serverNodeId)?.x ?? serverIndex * SERVER_SPACING_X
-      const serverY = savedPositions.get(serverNodeId)?.y ?? SERVER_START_Y
-
-      result.push({
-        id: serverNodeId,
-        type: 'server',
-        position: { x: serverX, y: serverY },
-        data: {
-          label: server.isLocal ? 'Local' : server.serverName,
-          apiUrl: server.apiUrl,
-          isLocal: server.isLocal,
-          connectionStatus: serverStatuses.get(server.apiUrl) ?? 'disconnected'
-        } satisfies ServerNodeData
-      })
+      const serverY = savedPositions.get(serverNodeId)?.y ?? 50
 
       const ports = fetchState.ports.get(server.apiUrl)
-      if (ports) {
-        const portsByName = new Map<string, { inputId: string | null; outputId: string | null }>()
+      const portsByName = new Map<string, { inputId: string | null; outputId: string | null }>()
 
+      if (ports) {
         ports.inputs.forEach((port) => {
           const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null }
           existing.inputId = String(port.id)
@@ -184,28 +178,58 @@ export function useRouteGraph({
           existing.outputId = String(port.id)
           portsByName.set(port.name, existing)
         })
-
-        let portIndex = 0
-        portsByName.forEach((portIds, portName) => {
-          const portNodeId = `port:${server.apiUrl}:${portName}`
-          const x = savedPositions.get(portNodeId)?.x ?? serverX
-          const y = savedPositions.get(portNodeId)?.y ?? PORT_START_Y + portIndex * PORT_SPACING_Y
-
-          result.push({
-            id: portNodeId,
-            type: 'port',
-            position: { x, y },
-            data: {
-              label: portName,
-              serverUrl: server.apiUrl,
-              serverName: server.isLocal ? 'Local' : server.serverName,
-              inputPortId: portIds.inputId,
-              outputPortId: portIds.outputId
-            } satisfies PortNodeData
-          })
-          portIndex++
-        })
       }
+
+      const portCount = portsByName.size
+      const serverHeight =
+        SERVER_HEADER_HEIGHT +
+        SERVER_PADDING_Y * 2 +
+        portCount * PORT_NODE_HEIGHT +
+        Math.max(0, portCount - 1) * PORT_SPACING_Y
+
+      // Server node (container for ports)
+      result.push({
+        id: serverNodeId,
+        type: 'server',
+        position: { x: serverX, y: serverY },
+        style: {
+          width: SERVER_WIDTH,
+          height: Math.max(serverHeight, SERVER_HEADER_HEIGHT + SERVER_PADDING_Y * 2)
+        },
+        data: {
+          label: server.isLocal ? 'Local' : server.serverName,
+          apiUrl: server.apiUrl,
+          isLocal: server.isLocal,
+          connectionStatus: serverStatuses.get(server.apiUrl) ?? 'disconnected',
+          portCount
+        } satisfies ServerNodeData
+      })
+
+      // Port nodes (children of server)
+      let portIndex = 0
+      portsByName.forEach((portIds, portName) => {
+        const portNodeId = `port:${server.apiUrl}:${portName}`
+        // Position relative to server node (parent)
+        const relativeX = SERVER_PADDING_X
+        const relativeY =
+          SERVER_HEADER_HEIGHT + SERVER_PADDING_Y + portIndex * (PORT_NODE_HEIGHT + PORT_SPACING_Y)
+
+        result.push({
+          id: portNodeId,
+          type: 'port',
+          position: { x: relativeX, y: relativeY },
+          parentId: serverNodeId,
+          extent: 'parent',
+          data: {
+            label: portName,
+            serverUrl: server.apiUrl,
+            serverName: server.isLocal ? 'Local' : server.serverName,
+            inputPortId: portIds.inputId,
+            outputPortId: portIds.outputId
+          } satisfies PortNodeData
+        })
+        portIndex++
+      })
     })
 
     return result

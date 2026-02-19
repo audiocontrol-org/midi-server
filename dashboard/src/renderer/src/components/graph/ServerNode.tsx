@@ -15,7 +15,8 @@ function arePropsEqual(
     prevData.label === nextData.label &&
     prevData.apiUrl === nextData.apiUrl &&
     prevData.isLocal === nextData.isLocal &&
-    prevData.connectionStatus === nextData.connectionStatus
+    prevData.connectionStatus === nextData.connectionStatus &&
+    prevData.portCount === nextData.portCount
   )
 }
 
@@ -26,18 +27,32 @@ function ServerNodeComponent({ data }: NodeProps<ServerNode>): React.JSX.Element
     checking: 'bg-yellow-500'
   }
 
+  const borderColors = {
+    connected: 'border-green-600/50',
+    disconnected: 'border-red-600/50',
+    checking: 'border-yellow-600/50'
+  }
+
   return (
-    <div className="bg-gray-700 rounded-lg p-3 min-w-[200px] border border-gray-600 shadow-lg">
-      <div className="flex items-center gap-2">
-        <span className={`w-2.5 h-2.5 rounded-full ${statusColors[data.connectionStatus]}`} />
-        <span className="text-white font-medium">{data.label}</span>
-        {data.isLocal && (
-          <span className="text-xs text-gray-400 bg-gray-600 px-1.5 py-0.5 rounded">Local</span>
-        )}
+    <div
+      className={`
+        w-full h-full rounded-lg border-2 ${borderColors[data.connectionStatus]}
+        bg-gray-800/60 backdrop-blur-sm
+      `}
+    >
+      {/* Server header */}
+      <div className="px-3 py-2 border-b border-gray-700/50 bg-gray-700/40 rounded-t-md">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${statusColors[data.connectionStatus]}`} />
+          <span className="text-white font-medium text-sm">{data.label}</span>
+          {data.isLocal && (
+            <span className="text-[10px] text-gray-400 bg-gray-600 px-1.5 py-0.5 rounded">
+              Local
+            </span>
+          )}
+        </div>
       </div>
-      <div className="text-xs text-gray-400 mt-1 truncate" title={data.apiUrl}>
-        {data.apiUrl}
-      </div>
+      {/* Port nodes will be rendered as children inside this area */}
     </div>
   )
 }
