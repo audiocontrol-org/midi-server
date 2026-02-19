@@ -194,9 +194,15 @@ export function RouteGraph({
     [edges, onDeleteRoute]
   )
 
+  // Calculate available height for the graph container
+  const graphHeight = 'calc(100vh - var(--site-header-height) - var(--page-header-height) - var(--page-section-gap) * 2)'
+
   if (loading) {
     return (
-      <div className="bg-gray-800 rounded-lg p-4 h-full min-h-[400px] flex items-center justify-center">
+      <div
+        className="bg-gray-800 rounded-lg p-4 min-h-[400px] flex items-center justify-center"
+        style={{ height: graphHeight }}
+      >
         <div className="text-gray-400">Loading graph...</div>
       </div>
     )
@@ -204,7 +210,8 @@ export function RouteGraph({
 
   return (
     <div
-      className="bg-gray-800 rounded-lg overflow-hidden h-full min-h-[400px]"
+      className="bg-gray-800 rounded-lg overflow-hidden min-h-[400px]"
+      style={{ height: graphHeight }}
       onKeyDown={onKeyDown}
       tabIndex={0}
     >
