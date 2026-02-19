@@ -17,6 +17,7 @@ import { RouteEdge } from '@/components/graph/RouteEdge'
 import { useRouteGraph, getPortFromNodeId } from '@/hooks/useRouteGraph'
 import type { PortNodeData } from '@/hooks/useRouteGraph'
 import { useNodePositions } from '@/hooks/useNodePositions'
+import { useGraphGestures } from '@/hooks/useGraphGestures'
 import type { Route, DiscoveredServer, RouteEndpoint } from '@/api/client'
 import type { PortsResponse } from '@/types/api'
 
@@ -48,6 +49,7 @@ export function RouteGraph({
   onDeleteRoute
 }: RouteGraphProps): React.JSX.Element {
   const { positions, updatePosition } = useNodePositions()
+  const gestures = useGraphGestures()
 
   // Get computed nodes/edges from hook (stable arrays - only change when data changes)
   const {
@@ -217,8 +219,11 @@ export function RouteGraph({
         edgeTypes={edgeTypes}
         connectionMode={ConnectionMode.Loose}
         fitView
-        panOnDrag
-        zoomOnScroll
+        panOnDrag={gestures.panOnDrag}
+        panOnScroll={gestures.panOnScroll}
+        panOnScrollMode={gestures.panOnScrollMode}
+        zoomOnScroll={gestures.zoomOnScroll}
+        zoomOnPinch={gestures.zoomOnPinch}
         minZoom={0.25}
         maxZoom={2}
         defaultEdgeOptions={{
