@@ -1,0 +1,100 @@
+#!/bin/bash
+# Post-remove script for MIDI Server DEB package
+# Runs after package removal
+
+set -e
+
+# =============================================================================
+# Configuration
+# =============================================================================
+APP_NAME="midi-server"
+CLI_SYMLINK="/usr/local/bin/midi-http-server"
+CONFIG_DIR_USER="$HOME/.config/audiocontrol.org/midi-server"
+CONFIG_DIR_SYSTEM="/etc/audiocontrol.org/midi-server"
+LOG_FILE="/tmp/midi-server-install.log"
+
+# =============================================================================
+# Logging
+# =============================================================================
+log() {
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [postrm] $1" | tee -a "$LOG_FILE"
+}
+
+# =============================================================================
+# Main Script
+# =============================================================================
+log "=== MIDI Server Post-Remove Started ==="
+log "Action: $1"
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        log "--- Removing MIDI Server components ---"
+
+        # Remove CLI symlink
+        if [ -L "$CLI_SYMLINK" ]; then
+            rm "$CLI_SYMLINK"
+            log "Removed symlink: $CLI_SYMLINK"
+        elif [ -e "$CLI_SYMLINK" ]; then
+            log "Warning: $CLI_SYMLINK exists but is not a symlink, skipping"
+        fi
+
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            log "Updating desktop database..."
+            update-desktop-database /usr/share/applications 2>/dev/null || true
+        fi
+
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            log "Updating icon cache..."
+            gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+        fi
+
+        log "=== Post-Remove Completed ==="
+        ;;
+
+    purge)
+        log "--- Purging MIDI Server configuration ---"
+
+        # Remove CLI symlink (if not already removed)
+        if [ -L "$CLI_SYMLINK" ]; then
+            rm "$CLI_SYMLINK"
+            log "Removed symlink: $CLI_SYMLINK"
+        fi
+
+        # Remove system config directory
+        if [ -d "$CONFIG_DIR_SYSTEM" ]; then
+            rm -rf "$CONFIG_DIR_SYSTEM"
+            log "Removed system config: $CONFIG_DIR_SYSTEM"
+        fi
+
+        # Note: User config directories (~/.config/audiocontrol.org/midi-server)
+        # are NOT removed on purge as they belong to individual users and may
+        # contain user preferences they want to keep.
+        log "Note: User config directories are preserved"
+
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database /usr/share/applications 2>/dev/null || true
+        fi
+
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+        fi
+
+        log "=== Purge Completed ==="
+        ;;
+
+    failed-upgrade|abort-install|abort-upgrade|disappear)
+        log "Post-remove action: $1"
+        ;;
+
+    *)
+        log "Unknown action: $1"
+        ;;
+esac
+
+exit 0

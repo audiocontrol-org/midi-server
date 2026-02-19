@@ -22,12 +22,12 @@ Create Ubuntu-flavored Linux installers (DEB package and AppImage) for the MIDI 
 - [x] Feature documentation created
 - [x] GitHub milestone assigned
 - [x] GitHub issues created
-- [ ] Directory structure created
-- [ ] electron-builder configured
-- [ ] Install scripts created
-- [ ] Desktop entry and icons added
-- [ ] Build script created
-- [ ] CI workflow added
+- [x] Directory structure created
+- [x] electron-builder configured
+- [x] Install scripts created
+- [x] Desktop entry and icons added
+- [x] Build script created
+- [x] CI workflow added
 - [ ] Installation tested
 
 ## GitHub Issues
