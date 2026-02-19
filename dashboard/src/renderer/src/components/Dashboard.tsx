@@ -14,6 +14,7 @@ import { ServerTabs } from '@/components/ServerTabs'
 import { RoutingPanel } from '@/components/RoutingPanel'
 import { RouteGraph } from '@/components/RouteGraph'
 import { AddRouteModal } from '@/components/AddRouteModal'
+import { MainTabs } from '@/components/MainTabs'
 import {
   createClient,
   createApiClient,
@@ -56,7 +57,6 @@ export function Dashboard(): React.JSX.Element {
   // Routing state
   const [routes, setRoutes] = useState<Route[]>([])
   const [isAddRouteModalOpen, setIsAddRouteModalOpen] = useState(false)
-  const [routeViewMode, setRouteViewMode] = useState<'list' | 'graph'>('list')
 
   // Fetch build info on mount
   useEffect(() => {
@@ -447,115 +447,104 @@ export function Dashboard(): React.JSX.Element {
           />
         )}
 
-        {/* Port lists and details */}
-        {((isViewingLocalServer && status.connected) || (!isViewingLocalServer && remotePorts)) &&
-          displayPorts && (
-            <div className="grid lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 grid md:grid-cols-2 gap-6">
-                <PortList
-                  title="MIDI Inputs"
-                  ports={displayPorts.inputs}
-                  openPortIds={isViewingLocalServer ? openPortIds : new Set()}
-                  selectedPortId={isViewingLocalServer ? selectedPortId : null}
-                  onPortClick={isViewingLocalServer ? handlePortClick : () => {}}
-                />
-                <PortList
-                  title="MIDI Outputs"
-                  ports={displayPorts.outputs}
-                  openPortIds={isViewingLocalServer ? openPortIds : new Set()}
-                  selectedPortId={isViewingLocalServer ? selectedPortId : null}
-                  onPortClick={isViewingLocalServer ? handlePortClick : () => {}}
-                />
-              </div>
-
-              <div>
-                {isViewingLocalServer && selectedPort ? (
-                  <PortDetail
-                    port={selectedPort}
-                    onClose={handleClosePort}
-                    onMessagesReceived={handleMessagesReceived}
-                  />
-                ) : (
-                  <div className="bg-gray-800 rounded-lg p-4 h-full flex items-center justify-center">
-                    <p className="text-gray-500 text-center">
-                      {isViewingLocalServer
-                        ? 'Click a port to open it and view details'
-                        : 'Port interaction available on local server'}
+        {/* Main content tabs */}
+        <MainTabs>
+          {(activeTab) => {
+            // Ports tab
+            if (activeTab === 'ports') {
+              // No connection state
+              if (isViewingLocalServer && !status.connected && !status.error) {
+                return (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500">
+                      {platform.canManageServer
+                        ? 'Start the server or connect to see available MIDI ports'
+                        : 'Connect to a MIDI HTTP Server to see available ports'}
                     </p>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                )
+              }
 
-        {/* No connection message */}
-        {isViewingLocalServer && !status.connected && !status.error && (
-          <div className="text-center py-12">
-            <p className="text-gray-500">
-              {platform.canManageServer
-                ? 'Start the server or connect to see available MIDI ports'
-                : 'Connect to a MIDI HTTP Server to see available ports'}
-            </p>
-          </div>
-        )}
+              // Port lists and details
+              if (
+                ((isViewingLocalServer && status.connected) ||
+                  (!isViewingLocalServer && remotePorts)) &&
+                displayPorts
+              ) {
+                return (
+                  <div className="grid lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 grid md:grid-cols-2 gap-6">
+                      <PortList
+                        title="MIDI Inputs"
+                        ports={displayPorts.inputs}
+                        openPortIds={isViewingLocalServer ? openPortIds : new Set()}
+                        selectedPortId={isViewingLocalServer ? selectedPortId : null}
+                        onPortClick={isViewingLocalServer ? handlePortClick : () => {}}
+                      />
+                      <PortList
+                        title="MIDI Outputs"
+                        ports={displayPorts.outputs}
+                        openPortIds={isViewingLocalServer ? openPortIds : new Set()}
+                        selectedPortId={isViewingLocalServer ? selectedPortId : null}
+                        onPortClick={isViewingLocalServer ? handlePortClick : () => {}}
+                      />
+                    </div>
 
-        {/* Routing Panel or Graph */}
-        {discoveredServers.length >= 1 &&
-          (routeViewMode === 'list' ? (
-            <RoutingPanel
-              routes={routes}
-              servers={discoveredServers}
-              onToggleRoute={handleToggleRoute}
-              onDeleteRoute={handleDeleteRoute}
-              onAddRoute={() => setIsAddRouteModalOpen(true)}
-              viewMode={routeViewMode}
-              onViewModeChange={setRouteViewMode}
-            />
-          ) : (
-            <div className="space-y-2">
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-white">MIDI Routes</h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setRouteViewMode('list')}
-                      className="p-1.5 text-gray-400 hover:text-white transition-colors"
-                      title="Switch to list view"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 6h16M4 12h16M4 18h16"
+                    <div>
+                      {isViewingLocalServer && selectedPort ? (
+                        <PortDetail
+                          port={selectedPort}
+                          onClose={handleClosePort}
+                          onMessagesReceived={handleMessagesReceived}
                         />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => setIsAddRouteModalOpen(true)}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition-colors"
-                    >
-                      Add Route
-                    </button>
+                      ) : (
+                        <div className="bg-gray-800 rounded-lg p-4 h-full flex items-center justify-center">
+                          <p className="text-gray-500 text-center">
+                            {isViewingLocalServer
+                              ? 'Click a port to open it and view details'
+                              : 'Port interaction available on local server'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
-              <RouteGraph
-                routes={routes}
-                servers={discoveredServers}
-                serverStatuses={serverStatuses}
-                fetchServerPorts={fetchServerPorts}
-                onCreateRoute={handleAddRoute}
-                onDeleteRoute={handleDeleteRoute}
-                onToggleRoute={handleToggleRoute}
-              />
-            </div>
-          ))}
+                )
+              }
+
+              return null
+            }
+
+            // Routes tab
+            if (activeTab === 'routes') {
+              return (
+                <RoutingPanel
+                  routes={routes}
+                  servers={discoveredServers}
+                  onToggleRoute={handleToggleRoute}
+                  onDeleteRoute={handleDeleteRoute}
+                  onAddRoute={() => setIsAddRouteModalOpen(true)}
+                />
+              )
+            }
+
+            // Graph tab
+            if (activeTab === 'graph') {
+              return (
+                <RouteGraph
+                  routes={routes}
+                  servers={discoveredServers}
+                  serverStatuses={serverStatuses}
+                  fetchServerPorts={fetchServerPorts}
+                  onCreateRoute={handleAddRoute}
+                  onDeleteRoute={handleDeleteRoute}
+                  onToggleRoute={handleToggleRoute}
+                />
+              )
+            }
+
+            return null
+          }}
+        </MainTabs>
 
         {/* Add Route Modal */}
         <AddRouteModal

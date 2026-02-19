@@ -6,34 +6,6 @@ interface RoutingPanelProps {
   onToggleRoute: (routeId: string, enabled: boolean) => void
   onDeleteRoute: (routeId: string) => void
   onAddRoute: () => void
-  viewMode: 'list' | 'graph'
-  onViewModeChange: (mode: 'list' | 'graph') => void
-}
-
-// Graph icon for view toggle
-function GraphIcon(): React.JSX.Element {
-  return (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <circle cx="5" cy="12" r="2" strokeWidth={2} />
-      <circle cx="19" cy="6" r="2" strokeWidth={2} />
-      <circle cx="19" cy="18" r="2" strokeWidth={2} />
-      <path strokeLinecap="round" strokeWidth={2} d="M7 11l10-4M7 13l10 4" />
-    </svg>
-  )
-}
-
-// List icon for view toggle
-function ListIcon(): React.JSX.Element {
-  return (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M4 6h16M4 12h16M4 18h16"
-      />
-    </svg>
-  )
 }
 
 export function RoutingPanel({
@@ -41,9 +13,7 @@ export function RoutingPanel({
   servers,
   onToggleRoute,
   onDeleteRoute,
-  onAddRoute,
-  viewMode,
-  onViewModeChange
+  onAddRoute
 }: RoutingPanelProps): React.JSX.Element {
   const getServerName = (serverUrl: string): string => {
     if (serverUrl === 'local') return 'Local'
@@ -68,21 +38,12 @@ export function RoutingPanel({
     <div className="bg-gray-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-white">MIDI Routes</h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onViewModeChange(viewMode === 'list' ? 'graph' : 'list')}
-            className="p-1.5 text-gray-400 hover:text-white transition-colors"
-            title={viewMode === 'list' ? 'Switch to graph view' : 'Switch to list view'}
-          >
-            {viewMode === 'list' ? <GraphIcon /> : <ListIcon />}
-          </button>
-          <button
-            onClick={onAddRoute}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition-colors"
-          >
-            Add Route
-          </button>
-        </div>
+        <button
+          onClick={onAddRoute}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition-colors"
+        >
+          Add Route
+        </button>
       </div>
 
       {routes.length === 0 ? (
