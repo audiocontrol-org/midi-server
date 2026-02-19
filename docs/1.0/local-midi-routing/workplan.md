@@ -30,9 +30,9 @@ Add support for routing MIDI messages between ports on the same server (local ro
 
 ### Tasks
 
-- [ ] Create `dashboard/src/api-server/midi-client.ts` with MidiClient interface
-- [ ] Create `dashboard/src/api-server/local-client.ts` implementing MidiClient
-- [ ] Update `dashboard/src/api-server/remote-client.ts` to implement MidiClient interface
+- [x] Create `dashboard/src/api-server/midi-client.ts` with MidiClient interface
+- [x] Create `dashboard/src/api-server/local-client.ts` implementing MidiClient
+- [x] Update `dashboard/src/api-server/remote-client.ts` to implement MidiClient interface
 
 ### Interface Definition
 
@@ -72,9 +72,9 @@ export interface MidiClient {
 
 ### Tasks
 
-- [ ] Create `dashboard/src/api-server/client-factory.ts`
-- [ ] Implement `getMidiClient(serverUrl, localMidiServerPort)` function
-- [ ] Implement client caching for both local and remote clients
+- [x] Create `dashboard/src/api-server/client-factory.ts`
+- [x] Implement `getMidiClient(serverUrl, localMidiServerPort)` function
+- [x] Implement client caching for both local and remote clients
 
 ### Factory Logic
 
@@ -104,9 +104,9 @@ export function getMidiClient(
 
 ### Tasks
 
-- [ ] Add `midiServerPort: number` to RoutingEngine constructor
-- [ ] Import `getMidiClient` from client-factory
-- [ ] Replace all `getRemoteClient(serverUrl)` calls with `getMidiClient(serverUrl, this.midiServerPort)`
+- [x] Add `midiServerPort: number` to RoutingEngine constructor
+- [x] Import `getMidiClient` from client-factory
+- [x] Replace all `getRemoteClient(serverUrl)` calls with `getMidiClient(serverUrl, this.midiServerPort)`
 
 ### Files Modified
 
@@ -126,7 +126,7 @@ export function getMidiClient(
 
 ### Tasks
 
-- [ ] Update `server.ts` to pass `midiServerPort` to RoutingEngine constructor
+- [x] Update `server.ts` to pass `midiServerPort` to RoutingEngine constructor
 
 ### Files Modified
 
@@ -145,8 +145,8 @@ export function getMidiClient(
 
 ### Tasks
 
-- [ ] Add `handleLocalPorts` handler in routing-handlers.ts
-- [ ] Wire handler to `GET /api/local/ports` in server.ts
+- [x] Add `handleLocalPorts` handler in routing-handlers.ts
+- [x] Wire handler to `GET /api/local/ports` in server.ts
 
 ### Endpoint Specification
 
@@ -180,9 +180,9 @@ export function getMidiClient(
 
 ### Tasks
 
-- [ ] Unit test: LocalClient makes correct HTTP calls
-- [ ] Unit test: Factory returns correct client type
-- [ ] Integration test: Create local route, verify message forwarding
+- [x] Unit test: LocalClient makes correct HTTP calls
+- [x] Unit test: Factory returns correct client type
+- [x] Integration test: Create local route, verify message forwarding
 
 ### Integration Test Scenario
 

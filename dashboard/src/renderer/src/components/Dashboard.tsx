@@ -31,6 +31,7 @@ export function Dashboard(): React.JSX.Element {
   const update = useUpdateStatus()
   const { status, ports, connect, disconnect, refresh } = useServerConnection({ autoConnect: false })
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
+  const [serverError, setServerError] = useState<string | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
@@ -199,9 +200,11 @@ export function Dashboard(): React.JSX.Element {
       try {
         const process = await platform.startServer(port)
         setServerProcess(process)
+        setServerError(null)
         connect()
       } catch (err) {
         console.error('Failed to start server:', err)
+        setServerError(err instanceof Error ? err.message : 'Failed to start server')
       }
     },
     [platform, connect]
@@ -211,11 +214,13 @@ export function Dashboard(): React.JSX.Element {
     try {
       await platform.stopServer()
       setServerProcess({ running: false, pid: null, port: null, url: null })
+      setServerError(null)
       disconnect()
       setOpenPorts(new Map())
       setSelectedPortId(null)
     } catch (err) {
       console.error('Failed to stop server:', err)
+      setServerError(err instanceof Error ? err.message : 'Failed to stop server')
     }
   }, [platform, disconnect])
 
@@ -326,6 +331,9 @@ export function Dashboard(): React.JSX.Element {
 
   const fetchServerPorts = useCallback(
     async (serverUrl: string): Promise<{ inputs: MidiPort[]; outputs: MidiPort[] }> => {
+      if (serverUrl === 'local') {
+        return apiClientRef.current.getLocalPorts()
+      }
       if (serverUrl === localServerUrl && ports) {
         return ports
       }
@@ -414,6 +422,7 @@ export function Dashboard(): React.JSX.Element {
           <ServerControl
             connectionStatus={status}
             serverProcess={serverProcess}
+            serverError={serverError}
             canManageServer={platform.canManageServer}
             onConnect={connect}
             onDisconnect={disconnect}
@@ -488,7 +497,7 @@ export function Dashboard(): React.JSX.Element {
         )}
 
         {/* Routing Panel */}
-        {discoveredServers.length > 1 && (
+        {discoveredServers.length > 0 && (
           <RoutingPanel
             routes={routes}
             servers={discoveredServers}

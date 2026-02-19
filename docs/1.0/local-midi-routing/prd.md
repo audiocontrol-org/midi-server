@@ -20,11 +20,11 @@ The current MIDI routing implementation only supports routing between remote ser
 
 ## Success Criteria
 
-- [ ] Users can select "local" as a server option when creating routes
-- [ ] Routes with source and/or destination set to "local" work correctly
-- [ ] `/api/local/ports` endpoint returns available local MIDI ports
-- [ ] Local routing has the same latency characteristics as remote routing
-- [ ] Integration tests verify local route message forwarding
+- [x] Users can select "local" as a server option when creating routes
+- [x] Routes with source and/or destination set to "local" work correctly
+- [x] `/api/local/ports` endpoint returns available local MIDI ports
+- [x] Local routing has the same latency characteristics as remote routing
+- [x] Integration tests verify local route message forwarding
 
 ## Scope
 

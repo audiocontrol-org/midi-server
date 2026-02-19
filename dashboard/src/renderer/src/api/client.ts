@@ -213,6 +213,10 @@ export class ApiClient {
     })
   }
 
+  async getLocalPorts(): Promise<PortsResponse> {
+    return this.request<PortsResponse>('/api/local/ports')
+  }
+
   // Remote server proxy endpoints
   async getRemoteServerPorts(serverUrl: string): Promise<PortsResponse> {
     const encodedUrl = encodeURIComponent(serverUrl)
