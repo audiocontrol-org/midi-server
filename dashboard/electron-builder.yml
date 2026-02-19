@@ -24,7 +24,7 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
-  icon: build/icon.png
+  icon: resources/icon.png
   category: public.app-category.utilities
   target:
     - target: dmg
