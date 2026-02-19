@@ -28,7 +28,7 @@ Create Ubuntu-flavored Linux installers (DEB package and AppImage) for the MIDI 
 - [x] Desktop entry and icons added
 - [x] Build script created
 - [x] CI workflow added
-- [ ] Installation tested
+- [x] Installation tested
 
 ## GitHub Issues
 
