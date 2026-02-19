@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 import type { Route, DiscoveredServer } from '@/api/client'
-import type { PortsResponse, MidiPort } from '@/types/api'
+import type { PortsResponse } from '@/types/api'
 
 const SERVER_SPACING_X = 350
-const PORT_SPACING_Y = 50
-const SERVER_START_Y = 100
-const PORT_START_Y = 200
+const PORT_SPACING_Y = 45
+const SERVER_START_Y = 50
+const PORT_START_Y = 120
 
 export interface ServerNodeData extends Record<string, unknown> {
   label: string
@@ -17,10 +17,11 @@ export interface ServerNodeData extends Record<string, unknown> {
 
 export interface PortNodeData extends Record<string, unknown> {
   label: string
-  portId: string
-  portType: 'input' | 'output'
   serverUrl: string
   serverName: string
+  // Port IDs - null if port doesn't exist in that direction
+  inputPortId: string | null
+  outputPortId: string | null
 }
 
 export interface RouteEdgeData extends Record<string, unknown> {
@@ -175,36 +176,48 @@ export function useRouteGraph({
         } satisfies ServerNodeData
       })
 
-      // Add port nodes
+      // Combine input/output ports by name
       const ports = fetchState.ports.get(server.apiUrl)
       if (ports) {
-        const addPortNodes = (portList: MidiPort[], portType: 'input' | 'output'): void => {
-          portList.forEach((port, portIndex) => {
-            const portNodeId = `port:${server.apiUrl}:${portType}:${port.id}`
-            const offsetX = portType === 'input' ? -80 : 80
-            const defaultX = serverX + offsetX
-            const defaultY = PORT_START_Y + portIndex * PORT_SPACING_Y
+        // Build a map of port name -> { inputId, outputId }
+        const portsByName = new Map<string, { inputId: string | null; outputId: string | null }>()
 
-            result.push({
-              id: portNodeId,
-              type: 'port',
-              position: {
-                x: savedPositions.get(portNodeId)?.x ?? defaultX,
-                y: savedPositions.get(portNodeId)?.y ?? defaultY
-              },
-              data: {
-                label: port.name,
-                portId: String(port.id),
-                portType,
-                serverUrl: server.apiUrl,
-                serverName: server.isLocal ? 'Local' : server.serverName
-              } satisfies PortNodeData
-            })
+        ports.inputs.forEach((port) => {
+          const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null }
+          existing.inputId = String(port.id)
+          portsByName.set(port.name, existing)
+        })
+
+        ports.outputs.forEach((port) => {
+          const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null }
+          existing.outputId = String(port.id)
+          portsByName.set(port.name, existing)
+        })
+
+        // Create unified port nodes
+        let portIndex = 0
+        portsByName.forEach((portIds, portName) => {
+          const portNodeId = `port:${server.apiUrl}:${portName}`
+          const defaultX = serverX
+          const defaultY = PORT_START_Y + portIndex * PORT_SPACING_Y
+
+          result.push({
+            id: portNodeId,
+            type: 'port',
+            position: {
+              x: savedPositions.get(portNodeId)?.x ?? defaultX,
+              y: savedPositions.get(portNodeId)?.y ?? defaultY
+            },
+            data: {
+              label: portName,
+              serverUrl: server.apiUrl,
+              serverName: server.isLocal ? 'Local' : server.serverName,
+              inputPortId: portIds.inputId,
+              outputPortId: portIds.outputId
+            } satisfies PortNodeData
           })
-        }
-
-        addPortNodes(ports.inputs, 'input')
-        addPortNodes(ports.outputs, 'output')
+          portIndex++
+        })
       }
     })
 
@@ -212,13 +225,29 @@ export function useRouteGraph({
   }, [servers, fetchState.ports, serverStatuses, savedPositions])
 
   // Helper to resolve serverUrl (handles "local" -> actual URL)
-  const resolveServerUrl = (serverUrl: string): string => {
-    if (serverUrl === 'local') {
-      const localServer = servers.find((s) => s.isLocal)
-      return localServer?.apiUrl ?? serverUrl
-    }
-    return serverUrl
-  }
+  const resolveServerUrl = useCallback(
+    (serverUrl: string): string => {
+      if (serverUrl === 'local') {
+        const localServer = servers.find((s) => s.isLocal)
+        return localServer?.apiUrl ?? serverUrl
+      }
+      return serverUrl
+    },
+    [servers]
+  )
+
+  // Helper to find port name by ID
+  const findPortName = useCallback(
+    (serverUrl: string, portId: string, type: 'input' | 'output'): string | null => {
+      const ports = fetchState.ports.get(serverUrl)
+      if (!ports) return null
+
+      const portList = type === 'input' ? ports.inputs : ports.outputs
+      const port = portList.find((p) => String(p.id) === portId)
+      return port?.name ?? null
+    },
+    [fetchState.ports]
+  )
 
   // Helper to parse portId which may be "input-4" or "output-5" format, or just "4"
   const parsePortId = (portId: string): { type: 'input' | 'output'; id: string } | null => {
@@ -238,27 +267,38 @@ export function useRouteGraph({
       const sourceServerUrl = resolveServerUrl(route.source.serverUrl)
       const destServerUrl = resolveServerUrl(route.destination.serverUrl)
 
-      // Parse port IDs (handle "input-4" or "output-5" format)
+      // Parse port IDs to get the numeric ID
       const sourceParsed = parsePortId(route.source.portId)
       const destParsed = parsePortId(route.destination.portId)
 
-      // Build node IDs - use parsed type/id if available, otherwise use the raw portId
-      // route.source is INPUT port (receives MIDI), route.destination is OUTPUT port (sends MIDI)
-      const inputPortNodeId = sourceParsed
-        ? `port:${sourceServerUrl}:${sourceParsed.type}:${sourceParsed.id}`
-        : `port:${sourceServerUrl}:input:${route.source.portId}`
-      const outputPortNodeId = destParsed
-        ? `port:${destServerUrl}:${destParsed.type}:${destParsed.id}`
-        : `port:${destServerUrl}:output:${route.destination.portId}`
+      const sourcePortId = sourceParsed?.id ?? route.source.portId
+      const destPortId = destParsed?.id ?? route.destination.portId
 
-      // React Flow edges go from SOURCE handle to TARGET handle
-      // Output ports have SOURCE handles, Input ports have TARGET handles
-      // So edge.source = output port node, edge.target = input port node
-      // This visualizes data flow: output -> input
+      // Find port names to build unified node IDs
+      // route.source is INPUT port (receives MIDI from external)
+      // route.destination is OUTPUT port (sends MIDI to external)
+      const sourcePortName =
+        route.source.portName || findPortName(sourceServerUrl, sourcePortId, 'input')
+      const destPortName =
+        route.destination.portName || findPortName(destServerUrl, destPortId, 'output')
+
+      // Build unified node IDs using port names
+      const sourceNodeId = sourcePortName
+        ? `port:${sourceServerUrl}:${sourcePortName}`
+        : `port:${sourceServerUrl}:unknown-${sourcePortId}`
+      const destNodeId = destPortName
+        ? `port:${destServerUrl}:${destPortName}`
+        : `port:${destServerUrl}:unknown-${destPortId}`
+
+      // Edge goes from source (INPUT) node to destination (OUTPUT) node
+      // Route: source INPUT port receives MIDI -> destination OUTPUT port sends MIDI
+      // Visual: source node outlet (right) -> destination node inlet (left) = left-to-right flow
       return {
         id: `route:${route.id}`,
-        source: outputPortNodeId,
-        target: inputPortNodeId,
+        source: sourceNodeId,
+        sourceHandle: 'outlet',
+        target: destNodeId,
+        targetHandle: 'inlet',
         type: 'route',
         data: {
           routeId: route.id,
@@ -270,25 +310,26 @@ export function useRouteGraph({
         } satisfies RouteEdgeData
       }
     })
-  }, [routes, animatingEdges, servers])
+  }, [routes, animatingEdges, resolveServerUrl, findPortName])
 
   return { nodes, edges, loading: fetchState.loading }
 }
 
-// Helper to extract port info from node ID
+// Helper to extract port info from node ID (updated for unified nodes)
 export function getPortFromNodeId(
-  nodeId: string | null
-): { serverUrl: string; portType: 'input' | 'output'; portId: string } | null {
-  if (!nodeId) return null
+  nodeId: string | null,
+  handleId: string | null
+): { serverUrl: string; portName: string; handleType: 'inlet' | 'outlet' } | null {
+  if (!nodeId || !handleId) return null
   const parts = nodeId.split(':')
-  if (parts[0] !== 'port' || parts.length < 4) return null
+  if (parts[0] !== 'port' || parts.length < 3) return null
 
-  // Handle URLs with colons by rejoining server URL parts
-  const portType = parts[parts.length - 2] as 'input' | 'output'
-  const portId = parts[parts.length - 1]
-  const serverUrl = parts.slice(1, -2).join(':')
+  // Handle URLs with colons by taking the last part as port name
+  const portName = parts[parts.length - 1]
+  const serverUrl = parts.slice(1, -1).join(':')
 
-  if (portType !== 'input' && portType !== 'output') return null
+  const handleType = handleId === 'inlet' ? 'inlet' : handleId === 'outlet' ? 'outlet' : null
+  if (!handleType) return null
 
-  return { serverUrl, portType, portId }
+  return { serverUrl, portName, handleType }
 }

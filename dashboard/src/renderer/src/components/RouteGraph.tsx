@@ -15,6 +15,7 @@ import { ServerNode } from '@/components/graph/ServerNode'
 import { PortNode } from '@/components/graph/PortNode'
 import { RouteEdge } from '@/components/graph/RouteEdge'
 import { useRouteGraph, getPortFromNodeId } from '@/hooks/useRouteGraph'
+import type { PortNodeData } from '@/hooks/useRouteGraph'
 import { useNodePositions } from '@/hooks/useNodePositions'
 import type { Route, DiscoveredServer, RouteEndpoint } from '@/api/client'
 import type { PortsResponse } from '@/types/api'
@@ -84,52 +85,77 @@ export function RouteGraph({
     [onNodesChangeBase, updatePosition]
   )
 
-  // Validate connections - in the graph UI, users drag from output handles to input handles
-  // But in MIDI routing terms: source=input port (receives MIDI), destination=output port (sends MIDI)
-  // The connection will be swapped in onConnect to match MIDI semantics
-  const isValidConnection = useCallback((connection: Edge | Connection): boolean => {
-    const sourcePort = getPortFromNodeId(connection.source)
-    const targetPort = getPortFromNodeId(connection.target)
+  // Validate connections
+  // User drags from outlet (source handle) to inlet (target handle)
+  // This creates a route: inlet's port receives MIDI, outlet's port sends MIDI
+  const isValidConnection = useCallback(
+    (connection: Edge | Connection): boolean => {
+      // Must have handle IDs
+      if (!connection.sourceHandle || !connection.targetHandle) return false
 
-    if (!sourcePort || !targetPort) return false
-    if (sourcePort.portType !== 'output') return false
-    if (targetPort.portType !== 'input') return false
+      // Must be outlet -> inlet
+      if (connection.sourceHandle !== 'outlet') return false
+      if (connection.targetHandle !== 'inlet') return false
 
-    return true
-  }, [])
+      // Source and target must be different nodes
+      if (connection.source === connection.target) return false
+
+      // Validate nodes exist and have appropriate handles
+      const sourceNode = nodes.find((n) => n.id === connection.source)
+      const targetNode = nodes.find((n) => n.id === connection.target)
+
+      if (!sourceNode || !targetNode) return false
+
+      const sourceData = sourceNode.data as PortNodeData
+      const targetData = targetNode.data as PortNodeData
+
+      // Source must have an input port (route receives MIDI from source's input)
+      // Target must have an output port (route sends MIDI to target's output)
+      if (!sourceData.inputPortId) return false
+      if (!targetData.outputPortId) return false
+
+      return true
+    },
+    [nodes]
+  )
 
   // Handle new connections - create routes
-  // In the graph: user drags from OUTPUT port (connection.source) to INPUT port (connection.target)
-  // In MIDI routing: source=INPUT port (receives MIDI), destination=OUTPUT port (sends MIDI)
-  // So we swap: route source = connection.target (INPUT), route destination = connection.source (OUTPUT)
+  // Graph: user drags from OUTLET (source node) to INLET (target node)
+  // User intent: send MIDI from source node to target node
+  // MIDI routing: route.source = INPUT port (receives MIDI), route.destination = OUTPUT port (sends MIDI)
+  // So: route.source = source node's INPUT, route.destination = target node's OUTPUT
   const onConnect = useCallback(
     async (connection: Connection) => {
-      const graphSourcePort = getPortFromNodeId(connection.source) // OUTPUT port in graph
-      const graphTargetPort = getPortFromNodeId(connection.target) // INPUT port in graph
+      const sourceInfo = getPortFromNodeId(connection.source, connection.sourceHandle ?? null)
+      const targetInfo = getPortFromNodeId(connection.target, connection.targetHandle ?? null)
 
-      if (!graphSourcePort || !graphTargetPort) return
+      if (!sourceInfo || !targetInfo) return
 
-      // Find port names from the nodes
-      const graphSourceNode = nodes.find((n) => n.id === connection.source)
-      const graphTargetNode = nodes.find((n) => n.id === connection.target)
+      // Get node data for port IDs
+      const sourceNode = nodes.find((n) => n.id === connection.source)
+      const targetNode = nodes.find((n) => n.id === connection.target)
 
-      if (!graphSourceNode || !graphTargetNode) return
+      if (!sourceNode || !targetNode) return
 
-      // Swap for MIDI routing semantics: INPUT port is route source, OUTPUT port is route destination
-      const sourceEndpoint: RouteEndpoint = {
-        serverUrl: graphTargetPort.serverUrl,
-        portId: graphTargetPort.portId,
-        portName: (graphTargetNode.data as { label: string }).label
+      const sourceData = sourceNode.data as PortNodeData
+      const targetData = targetNode.data as PortNodeData
+
+      // Route source = source node's INPUT port (receives MIDI from external device)
+      // Route destination = target node's OUTPUT port (sends MIDI to external device)
+      const routeSource: RouteEndpoint = {
+        serverUrl: sourceInfo.serverUrl,
+        portId: sourceData.inputPortId ?? '',
+        portName: sourceData.label
       }
 
-      const destinationEndpoint: RouteEndpoint = {
-        serverUrl: graphSourcePort.serverUrl,
-        portId: graphSourcePort.portId,
-        portName: (graphSourceNode.data as { label: string }).label
+      const routeDestination: RouteEndpoint = {
+        serverUrl: targetInfo.serverUrl,
+        portId: targetData.outputPortId ?? '',
+        portName: targetData.label
       }
 
       try {
-        await onCreateRoute(sourceEndpoint, destinationEndpoint)
+        await onCreateRoute(routeSource, routeDestination)
       } catch (err) {
         console.error('Failed to create route:', err)
       }
@@ -189,10 +215,7 @@ export function RouteGraph({
         <MiniMap
           nodeColor={(node) => {
             if (node.type === 'server') return '#6366f1'
-            if (node.type === 'port') {
-              const data = node.data as { portType: string }
-              return data.portType === 'input' ? '#3b82f6' : '#22c55e'
-            }
+            if (node.type === 'port') return '#6b7280'
             return '#6b7280'
           }}
           maskColor="rgba(0, 0, 0, 0.8)"

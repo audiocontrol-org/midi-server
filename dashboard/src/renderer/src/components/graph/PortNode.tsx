@@ -5,65 +5,42 @@ import type { PortNodeData } from '@/hooks/useRouteGraph'
 
 type PortNode = Node<PortNodeData, 'port'>
 
-// Input icon (arrow pointing in)
-function InputIcon(): React.JSX.Element {
-  return (
-    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M19 12H5m7-7l-7 7 7 7"
-      />
-    </svg>
-  )
-}
-
-// Output icon (arrow pointing out)
-function OutputIcon(): React.JSX.Element {
-  return (
-    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M5 12h14m-7-7l7 7-7 7"
-      />
-    </svg>
-  )
-}
-
 function PortNodeComponent({ data }: NodeProps<PortNode>): React.JSX.Element {
-  const isInput = data.portType === 'input'
+  const hasInput = data.inputPortId !== null
+  const hasOutput = data.outputPortId !== null
 
   return (
     <div
-      className={`
-        bg-gray-600 rounded px-2 py-1 text-sm border border-gray-500 shadow
+      className="
+        bg-gray-600 rounded px-3 py-1.5 text-sm border border-gray-500 shadow
         hover:bg-gray-550 hover:border-gray-400 transition-colors
-        flex items-center gap-1.5 min-w-[120px]
-        ${isInput ? 'flex-row' : 'flex-row-reverse'}
-      `}
+        flex items-center gap-2 min-w-[140px]
+      "
     >
-      {/* Handle for connections */}
-      <Handle
-        type={isInput ? 'target' : 'source'}
-        position={isInput ? Position.Left : Position.Right}
-        className={`
-          !w-3 !h-3 !border-2 !border-gray-400
-          ${isInput ? '!bg-blue-500' : '!bg-green-500'}
-        `}
-      />
-
-      {/* Icon */}
-      <span className={isInput ? 'text-blue-400' : 'text-green-400'}>
-        {isInput ? <InputIcon /> : <OutputIcon />}
-      </span>
+      {/* Inlet handle (LEFT) - receives MIDI from routes */}
+      {hasInput && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="inlet"
+          className="!w-2.5 !h-2.5 !border-2 !border-gray-400 !bg-blue-500 !-left-1"
+        />
+      )}
 
       {/* Port name */}
-      <span className="text-white truncate flex-1" title={data.label}>
+      <span className="text-white truncate flex-1 text-center" title={data.label}>
         {data.label}
       </span>
+
+      {/* Outlet handle (RIGHT) - sends MIDI to routes */}
+      {hasOutput && (
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="outlet"
+          className="!w-2.5 !h-2.5 !border-2 !border-gray-400 !bg-green-500 !-right-1"
+        />
+      )}
     </div>
   )
 }
