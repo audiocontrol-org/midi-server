@@ -1,31 +1,5 @@
 import * as http from 'http'
-import * as https from 'https'
-import type { MidiClient } from './midi-client'
-
-export interface RemotePort {
-  id: number
-  name: string
-  type: 'input' | 'output'
-}
-
-export interface RemotePortsResponse {
-  inputs: RemotePort[]
-  outputs: RemotePort[]
-}
-
-export interface RemoteHealthResponse {
-  status: 'ok' | 'error'
-  uptime?: number
-}
-
-export interface RemoteMessagesResponse {
-  messages: number[][]
-}
-
-export interface RemoteSendResponse {
-  success: boolean
-  error?: string
-}
+import type { MidiClient, PortInfo } from './midi-client'
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'DELETE'
@@ -33,54 +7,51 @@ interface RequestOptions {
   timeout?: number
 }
 
-/**
- * Extract the numeric port index from a portId like "input-2" or "output-1"
- */
+interface RawPortsResponse {
+  inputs: string[]
+  outputs: string[]
+}
+
 function extractPortIndex(portId: string): string {
   const match = portId.match(/^(?:input|output)-(\d+)$/)
   return match ? match[1] : portId
 }
 
-export class RemoteClient implements MidiClient {
+export class LocalClient implements MidiClient {
   private baseUrl: string
   private defaultTimeout: number
 
-  constructor(serverUrl: string, timeout = 5000) {
-    // Ensure URL ends without trailing slash
-    this.baseUrl = serverUrl.replace(/\/$/, '')
+  constructor(midiServerPort: number, timeout = 5000) {
+    this.baseUrl = `http://localhost:${midiServerPort}`
     this.defaultTimeout = timeout
   }
 
   private request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     return new Promise((resolve, reject) => {
       const url = new URL(path, this.baseUrl)
-      const isHttps = url.protocol === 'https:'
-      const httpModule = isHttps ? https : http
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         Accept: 'application/json'
       }
 
-      // Explicitly set Content-Length when there's a body
       if (options.body) {
         headers['Content-Length'] = String(Buffer.byteLength(options.body))
       }
 
       const reqOptions: http.RequestOptions = {
         hostname: url.hostname,
-        port: url.port || (isHttps ? 443 : 80),
+        port: url.port || 80,
         path: url.pathname + url.search,
         method: options.method ?? 'GET',
         headers,
         timeout: options.timeout ?? this.defaultTimeout
       }
 
-      const req = httpModule.request(reqOptions, (res) => {
+      const req = http.request(reqOptions, (res) => {
         const chunks: Buffer[] = []
 
         res.on('data', (chunk: Buffer) => chunks.push(chunk))
-
         res.on('end', () => {
           const body = Buffer.concat(chunks).toString()
 
@@ -122,17 +93,12 @@ export class RemoteClient implements MidiClient {
     })
   }
 
-  async health(): Promise<RemoteHealthResponse> {
-    // Check the API server health, not the MIDI server
-    return this.request<RemoteHealthResponse>('/api/health')
+  async health(): Promise<{ status: string }> {
+    return this.request<{ status: string }>('/health')
   }
 
-  async midiHealth(): Promise<RemoteHealthResponse> {
-    return this.request<RemoteHealthResponse>('/midi/health')
-  }
-
-  async getPorts(): Promise<RemotePortsResponse> {
-    const raw = await this.request<{ inputs: string[]; outputs: string[] }>('/midi/ports')
+  async getPorts(): Promise<{ inputs: PortInfo[]; outputs: PortInfo[] }> {
+    const raw = await this.request<RawPortsResponse>('/ports')
     return {
       inputs: raw.inputs.map((name, index) => ({ id: index, name, type: 'input' as const })),
       outputs: raw.outputs.map((name, index) => ({ id: index, name, type: 'output' as const }))
@@ -141,7 +107,7 @@ export class RemoteClient implements MidiClient {
 
   async openPort(portId: string, name: string, type: 'input' | 'output'): Promise<{ success: boolean }> {
     const index = extractPortIndex(portId)
-    return this.request<{ success: boolean }>(`/midi/port/${index}`, {
+    return this.request<{ success: boolean }>(`/port/${index}`, {
       method: 'POST',
       body: JSON.stringify({ name, type })
     })
@@ -149,37 +115,37 @@ export class RemoteClient implements MidiClient {
 
   async closePort(portId: string): Promise<{ success: boolean }> {
     const index = extractPortIndex(portId)
-    return this.request<{ success: boolean }>(`/midi/port/${index}`, {
+    return this.request<{ success: boolean }>(`/port/${index}`, {
       method: 'DELETE'
     })
   }
 
-  async getMessages(portId: string): Promise<RemoteMessagesResponse> {
+  async getMessages(portId: string): Promise<{ messages: number[][] }> {
     const index = extractPortIndex(portId)
-    return this.request<RemoteMessagesResponse>(`/midi/port/${index}/messages`)
+    return this.request<{ messages: number[][] }>(`/port/${index}/messages`)
   }
 
-  async sendMessage(portId: string, message: number[]): Promise<RemoteSendResponse> {
+  async sendMessage(portId: string, message: number[]): Promise<{ success: boolean; error?: string }> {
     const index = extractPortIndex(portId)
-    return this.request<RemoteSendResponse>(`/midi/port/${index}/send`, {
+    return this.request<{ success: boolean; error?: string }>(`/port/${index}/send`, {
       method: 'POST',
       body: JSON.stringify({ message })
     })
   }
 }
 
-// Client cache to reuse connections
-const clientCache = new Map<string, RemoteClient>()
+const localClientCache = new Map<number, LocalClient>()
 
-export function getRemoteClient(serverUrl: string): RemoteClient {
-  let client = clientCache.get(serverUrl)
+export function getLocalClient(midiServerPort: number): LocalClient {
+  let client = localClientCache.get(midiServerPort)
   if (!client) {
-    client = new RemoteClient(serverUrl)
-    clientCache.set(serverUrl, client)
+    client = new LocalClient(midiServerPort)
+    localClientCache.set(midiServerPort, client)
   }
   return client
 }
 
-export function clearClientCache(): void {
-  clientCache.clear()
+export function clearLocalClientCache(): void {
+  localClientCache.clear()
 }
+

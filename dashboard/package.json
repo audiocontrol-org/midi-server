@@ -12,6 +12,8 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "test:integration": "tsx tests/integration/cross-server-routing.test.ts",
+    "test:local-routing-api": "tsx tests/integration/local-routing-api.test.ts",
+    "test:api-server": "tsx tests/api-server/local-client.test.ts && tsx tests/api-server/client-factory.test.ts",
     "test:update-api": "tsx tests/update/update-api.test.ts",
     "format": "prettier --write .",
     "lint": "eslint --cache .",

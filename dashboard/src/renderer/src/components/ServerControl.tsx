@@ -5,6 +5,7 @@ import { StatusIndicator } from '@/components/StatusIndicator'
 interface ServerControlProps {
   connectionStatus: ConnectionStatus
   serverProcess: ServerProcess | null
+  serverError?: string | null
   canManageServer: boolean
   onConnect: () => void
   onDisconnect: () => void
@@ -16,6 +17,7 @@ interface ServerControlProps {
 export function ServerControl({
   connectionStatus,
   serverProcess,
+  serverError,
   canManageServer,
   onConnect,
   onDisconnect,
@@ -78,6 +80,12 @@ export function ServerControl({
       )}
 
       {/* Connection Status - only show when server is running */}
+      {serverError && (
+        <div className="p-3 bg-red-900/50 border border-red-700 rounded-md">
+          <p className="text-red-300 text-sm">{serverError}</p>
+        </div>
+      )}
+
       {serverProcess?.running && (
         <div className="space-y-3">
           <div className="flex gap-2">

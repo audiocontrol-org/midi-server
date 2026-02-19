@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 import type { Route } from './routes-storage'
 import { RoutesStorage } from './routes-storage'
-import { getRemoteClient } from './remote-client'
+import { getMidiClient } from './client-factory'
 
 const POLL_INTERVAL = 50 // Poll input ports every 50ms for low latency
 
@@ -27,6 +27,7 @@ interface OpenPortState {
 
 export class RoutingEngine extends EventEmitter<RoutingEvents> {
   private storage: RoutesStorage
+  private midiServerPort: number
   private pollTimer: NodeJS.Timeout | null = null
   private running = false
   private routeStatuses: Map<string, RouteStatus> = new Map()
@@ -35,9 +36,10 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
   private syncInProgress = false
   private syncPending = false
 
-  constructor(storage: RoutesStorage, _localServerUrl: string) {
+  constructor(storage: RoutesStorage, midiServerPort: number) {
     super()
     this.storage = storage
+    this.midiServerPort = midiServerPort
   }
 
   start(): void {
@@ -204,7 +206,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
   private async openPort(serverUrl: string, portId: string, name: string, type: 'input' | 'output'): Promise<void> {
     try {
       console.log(`[RoutingEngine] Opening port ${name} (${type}) on ${serverUrl}`)
-      const client = getRemoteClient(serverUrl)
+      const client = getMidiClient(serverUrl, this.midiServerPort)
       const result = await client.openPort(portId, name, type)
       console.log(`[RoutingEngine] Port ${portId} opened: ${JSON.stringify(result)}`)
     } catch (err) {
@@ -214,7 +216,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   private async closePort(serverUrl: string, portId: string): Promise<void> {
     try {
-      const client = getRemoteClient(serverUrl)
+      const client = getMidiClient(serverUrl, this.midiServerPort)
       await client.closePort(portId)
     } catch (err) {
       console.error(`[RoutingEngine] Failed to close port ${portId} on ${serverUrl}:`, err)
@@ -259,7 +261,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   private async pollSourceAndForward(serverUrl: string, portId: string, routes: Route[]): Promise<void> {
     try {
-      const client = getRemoteClient(serverUrl)
+      const client = getMidiClient(serverUrl, this.midiServerPort)
       const response = await client.getMessages(portId)
 
       if (response.messages.length === 0) return
@@ -313,7 +315,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   private async forwardMessage(route: Route, message: number[]): Promise<void> {
     try {
-      const client = getRemoteClient(route.destination.serverUrl)
+      const client = getMidiClient(route.destination.serverUrl, this.midiServerPort)
       await client.sendMessage(route.destination.portId, message)
 
       console.log(`[RoutingEngine] Forwarded message to ${route.destination.serverUrl} port ${route.destination.portId}: [${message.slice(0, 3).join(', ')}${message.length > 3 ? '...' : ''}]`)

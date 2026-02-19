@@ -16,6 +16,7 @@ export function RoutingPanel({
   onAddRoute
 }: RoutingPanelProps): React.JSX.Element {
   const getServerName = (serverUrl: string): string => {
+    if (serverUrl === 'local') return 'Local'
     const server = servers.find((s) => s.apiUrl === serverUrl)
     if (server?.isLocal) return 'Local'
     return server?.serverName ?? serverUrl
