@@ -1,0 +1,97 @@
+#!/bin/bash
+# Post-install script for MIDI Server DEB package
+# Runs after package installation
+
+set -e
+
+# =============================================================================
+# Configuration
+# =============================================================================
+APP_NAME="midi-server"
+APP_DIR="/opt/MidiServer"
+CLI_SOURCE="$APP_DIR/resources/bin/midi-http-server"
+CLI_SYMLINK="/usr/local/bin/midi-http-server"
+DESKTOP_FILE="/usr/share/applications/midi-server.desktop"
+LOG_FILE="/tmp/midi-server-install.log"
+
+# =============================================================================
+# Logging
+# =============================================================================
+log() {
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [postinst] $1" | tee -a "$LOG_FILE"
+}
+
+log_error() {
+    log "ERROR: $1"
+}
+
+# =============================================================================
+# Main Script
+# =============================================================================
+log "=== MIDI Server Post-Install Started ==="
+log "Action: $1"
+
+case "$1" in
+    configure)
+        log "--- Configuring MIDI Server ---"
+
+        # Verify installation directory exists
+        if [ ! -d "$APP_DIR" ]; then
+            log_error "App directory not found at $APP_DIR"
+            exit 1
+        fi
+        log "Found app directory: $APP_DIR"
+
+        # Verify and set up CLI binary
+        if [ -f "$CLI_SOURCE" ]; then
+            log "Found CLI binary: $CLI_SOURCE"
+
+            # Ensure executable
+            chmod +x "$CLI_SOURCE"
+            log "Set executable permission on CLI binary"
+
+            # Create symlink for CLI access
+            if [ -L "$CLI_SYMLINK" ]; then
+                rm "$CLI_SYMLINK"
+                log "Removed existing symlink"
+            fi
+
+            # Ensure /usr/local/bin exists
+            mkdir -p "$(dirname "$CLI_SYMLINK")"
+
+            ln -s "$CLI_SOURCE" "$CLI_SYMLINK"
+            log "Created symlink: $CLI_SYMLINK -> $CLI_SOURCE"
+        else
+            log_error "CLI binary not found at $CLI_SOURCE"
+            log "Contents of $APP_DIR/resources:"
+            ls -la "$APP_DIR/resources" 2>&1 | while read -r line; do log "  $line"; done || true
+            exit 1
+        fi
+
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            log "Updating desktop database..."
+            update-desktop-database /usr/share/applications 2>/dev/null || true
+        fi
+
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            log "Updating icon cache..."
+            gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+        fi
+
+        log "=== Post-Install Completed Successfully ==="
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        log "Post-install abort action: $1"
+        ;;
+
+    *)
+        log "Unknown action: $1"
+        ;;
+esac
+
+exit 0

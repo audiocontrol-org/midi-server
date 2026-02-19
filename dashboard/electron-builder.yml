@@ -45,12 +45,40 @@ dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
-    - AppImage
-    - deb
+    - target: deb
+      arch:
+        - x64
+        - arm64
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+  executableName: midi-server
   maintainer: audiocontrol.org
-  category: Utility
+  category: Audio
+  icon: ../packaging/linux/resources/icons
+  desktop:
+    Name: MIDI Server
+    Comment: HTTP-to-MIDI bridge server
+    Categories: Audio;AudioVideo;
+    StartupWMClass: midi-server
+deb:
+  packageName: midi-server
+  artifactName: ${name}_${version}_${arch}.${ext}
+  depends:
+    - libasound2
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+  recommends:
+    - libappindicator3-1
+  afterInstall: ../packaging/linux/scripts/postinst
+  afterRemove: ../packaging/linux/scripts/postrm
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 publish:
   provider: github
   owner: audiocontrol-org

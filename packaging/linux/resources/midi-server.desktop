@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=MIDI Server
+Comment=HTTP-to-MIDI bridge server
+GenericName=MIDI Bridge
+Exec=/opt/MidiServer/midi-server %U
+Icon=midi-server
+Type=Application
+Categories=Audio;AudioVideo;
+Terminal=false
+StartupWMClass=midi-server
+Keywords=midi;audio;music;server;http;
