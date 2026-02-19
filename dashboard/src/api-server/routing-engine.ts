@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import type { Route } from './routes-storage'
 import { RoutesStorage } from './routes-storage'
 import { getMidiClient } from './client-factory'
+import type { LogBuffer } from './log-buffer'
 
 const POLL_INTERVAL = 50 // Poll input ports every 50ms for low latency
 
@@ -22,28 +23,44 @@ interface OpenPortState {
   portId: string
   serverUrl: string
   type: 'input' | 'output'
+  name: string
   refCount: number
 }
 
 export class RoutingEngine extends EventEmitter<RoutingEvents> {
   private storage: RoutesStorage
   private midiServerPort: number
+  private logBuffer: LogBuffer | null
   private pollTimer: NodeJS.Timeout | null = null
   private running = false
   private routeStatuses: Map<string, RouteStatus> = new Map()
   private openPorts: Map<string, OpenPortState> = new Map()
+  private failedPorts: Set<string> = new Set() // Track ports that failed to open
   private lastErrorLog: Map<string, number> | null = null
   private syncInProgress = false
   private syncPending = false
 
-  constructor(storage: RoutesStorage, midiServerPort: number) {
+  constructor(storage: RoutesStorage, midiServerPort: number, logBuffer?: LogBuffer) {
     super()
     this.storage = storage
     this.midiServerPort = midiServerPort
-    console.log(`[RoutingEngine] Initialized with midiServerPort=${midiServerPort}`)
+    this.logBuffer = logBuffer ?? null
+    this.log(`Initialized with midiServerPort=${midiServerPort}`)
     if (!midiServerPort || isNaN(midiServerPort)) {
-      console.error(`[RoutingEngine] WARNING: Invalid midiServerPort: ${midiServerPort}`)
+      this.logError(`WARNING: Invalid midiServerPort: ${midiServerPort}`)
     }
+  }
+
+  private log(message: string): void {
+    const formatted = `[RoutingEngine] ${message}`
+    console.log(formatted)
+    this.logBuffer?.add(formatted, 'info', 'routing')
+  }
+
+  private logError(message: string): void {
+    const formatted = `[RoutingEngine] ${message}`
+    console.error(formatted)
+    this.logBuffer?.add(formatted, 'error', 'routing')
   }
 
   start(): void {
@@ -61,7 +78,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     }
 
     // Open ports for enabled routes
-    console.log('[RoutingEngine] start() triggering sync')
+    this.log(' start() triggering sync')
     this.syncInProgress = true
     this.syncPending = false
     this.doSyncRoutePorts()
@@ -69,7 +86,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     // Start polling for messages
     this.pollTimer = setInterval(() => this.pollRoutes(), POLL_INTERVAL)
 
-    console.log('[RoutingEngine] Started')
+    this.log(' Started')
   }
 
   stop(): void {
@@ -84,7 +101,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     // Close all opened ports
     this.closeAllPorts()
 
-    console.log('[RoutingEngine] Stopped')
+    this.log(' Stopped')
   }
 
   getRouteStatuses(): RouteStatus[] {
@@ -97,15 +114,15 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   // Called when routes are added/updated/deleted
   onRoutesChanged(): void {
-    console.log(`[RoutingEngine] onRoutesChanged() called, syncInProgress=${this.syncInProgress}`)
+    this.log(` onRoutesChanged() called, syncInProgress=${this.syncInProgress}`)
     // Prevent concurrent syncs - queue if one is in progress
     if (this.syncInProgress) {
-      console.log('[RoutingEngine] sync in progress, queueing')
+      this.log(' sync in progress, queueing')
       this.syncPending = true
       return
     }
     // Set flag BEFORE calling async function to prevent race
-    console.log('[RoutingEngine] onRoutesChanged() triggering sync')
+    this.log(' onRoutesChanged() triggering sync')
     this.syncInProgress = true
     this.syncPending = false
     this.doSyncRoutePorts()
@@ -129,7 +146,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   private async syncRoutePorts(): Promise<void> {
     const syncId = ++this.syncId
-    console.log(`[RoutingEngine] syncRoutePorts #${syncId} starting`)
+    this.log(` syncRoutePorts #${syncId} starting`)
     const enabledRoutes = this.storage.getEnabled()
     const neededPorts = new Map<
       string,
@@ -177,7 +194,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     await Promise.all(closePromises)
 
     // Open ports that are needed
-    const openPromises: Promise<void>[] = []
+    const openPromises: Promise<boolean>[] = []
     for (const [key, port] of neededPorts) {
       if (!this.openPorts.has(key)) {
         openPromises.push(this.openPort(port.serverUrl, port.portId, port.name, port.type))
@@ -185,6 +202,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
           portId: port.portId,
           serverUrl: port.serverUrl,
           type: port.type,
+          name: port.name,
           refCount: 1
         })
       }
@@ -215,14 +233,20 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     portId: string,
     name: string,
     type: 'input' | 'output'
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const key = `${serverUrl}:${portId}`
     try {
-      console.log(`[RoutingEngine] Opening port ${name} (${type}) on ${serverUrl}`)
+      this.log(`Opening port ${name} (${type}) on ${serverUrl}`)
       const client = getMidiClient(serverUrl, this.midiServerPort)
       const result = await client.openPort(portId, name, type)
-      console.log(`[RoutingEngine] Port ${portId} opened: ${JSON.stringify(result)}`)
+      this.log(`Port ${portId} opened: ${JSON.stringify(result)}`)
+      this.failedPorts.delete(key)
+      return true
     } catch (err) {
-      console.error(`[RoutingEngine] Failed to open port ${portId} on ${serverUrl}:`, err)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      this.logError(`Failed to open port ${portId} on ${serverUrl}: ${errorMsg}`)
+      this.failedPorts.add(key)
+      return false
     }
   }
 
@@ -231,7 +255,8 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
       const client = getMidiClient(serverUrl, this.midiServerPort)
       await client.closePort(portId)
     } catch (err) {
-      console.error(`[RoutingEngine] Failed to close port ${portId} on ${serverUrl}:`, err)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      this.logError(`Failed to close port ${portId} on ${serverUrl}: ${errorMsg}`)
     }
   }
 
@@ -252,9 +277,38 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     // Log every 100 polls (~5 seconds) to show we're running
     this.pollCount++
     if (this.pollCount % 100 === 0) {
-      console.log(
-        `[RoutingEngine] Poll cycle ${this.pollCount}, ${enabledRoutes.length} enabled routes`
-      )
+      this.log(`Poll cycle ${this.pollCount}, ${enabledRoutes.length} enabled routes`)
+
+      // Retry any failed ports every 100 polls
+      if (this.failedPorts.size > 0) {
+        this.log(`Retrying ${this.failedPorts.size} failed ports`)
+        for (const key of this.failedPorts) {
+          const portState = this.openPorts.get(key)
+          if (portState) {
+            const success = await this.openPort(
+              portState.serverUrl,
+              portState.portId,
+              portState.name,
+              portState.type
+            )
+            // If port opened successfully, clear error status on affected routes
+            if (success) {
+              for (const route of enabledRoutes) {
+                const sourceKey = `${route.source.serverUrl}:${route.source.portId}`
+                const destKey = `${route.destination.serverUrl}:${route.destination.portId}`
+                if (sourceKey === key || destKey === key) {
+                  const status = this.routeStatuses.get(route.id)
+                  if (status && status.status === 'error') {
+                    status.status = 'active'
+                    status.error = undefined
+                    this.emit('route-status-changed', status)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
 
     // Group routes by source to avoid polling same source multiple times
@@ -284,9 +338,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
       if (response.messages.length === 0) return
 
-      console.log(
-        `[RoutingEngine] Got ${response.messages.length} messages from ${serverUrl} port ${portId}`
-      )
+      this.log(`Got ${response.messages.length} messages from ${serverUrl} port ${portId}`)
 
       // Forward each message to all destinations
       for (const message of response.messages) {
@@ -308,9 +360,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
           if (portState) {
             const route = routes[0]
             const portInfo = route.source.portId === portId ? route.source : route.destination
-            console.log(
-              `[RoutingEngine] Retrying port open: ${portInfo.portName} (${portState.type}) on ${serverUrl}`
-            )
+            this.log(`Retrying port open: ${portInfo.portName} (${portState.type}) on ${serverUrl}`)
             await this.openPort(serverUrl, portId, portInfo.portName, portState.type)
             if (!this.lastErrorLog) this.lastErrorLog = new Map()
             this.lastErrorLog.set(retryKey, now)
@@ -324,7 +374,7 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
         !this.lastErrorLog.has(errorKey) ||
         now - this.lastErrorLog.get(errorKey)! > 60000
       ) {
-        console.error(`[RoutingEngine] Poll error for ${serverUrl} port ${portId}:`, errorMsg)
+        this.logError(`Poll error for ${serverUrl} port ${portId}: ${errorMsg}`)
         if (!this.lastErrorLog) this.lastErrorLog = new Map()
         this.lastErrorLog.set(errorKey, now)
       }
@@ -344,8 +394,8 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
       const client = getMidiClient(route.destination.serverUrl, this.midiServerPort)
       await client.sendMessage(route.destination.portId, message)
 
-      console.log(
-        `[RoutingEngine] Forwarded message to ${route.destination.serverUrl} port ${route.destination.portId}: [${message.slice(0, 3).join(', ')}${message.length > 3 ? '...' : ''}]`
+      this.log(
+        `Forwarded message to ${route.destination.serverUrl} port ${route.destination.portId}: [${message.slice(0, 3).join(', ')}${message.length > 3 ? '...' : ''}]`
       )
 
       // Update status
@@ -361,8 +411,8 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
       this.emit('message-routed', route.id, message)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
-      console.error(
-        `[RoutingEngine] Forward failed to ${route.destination.serverUrl} port ${route.destination.portId}: ${errorMsg}`
+      this.logError(
+        `Forward failed to ${route.destination.serverUrl} port ${route.destination.portId}: ${errorMsg}`
       )
 
       // If port not found or bad gateway, try to re-open it (rate-limited to once per 5 seconds)
@@ -374,8 +424,8 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
         if (now - lastRetry > 5000) {
           const portState = this.openPorts.get(destKey)
           if (portState) {
-            console.log(
-              `[RoutingEngine] Retrying destination port open: ${route.destination.portName} on ${route.destination.serverUrl}`
+            this.log(
+              `Retrying destination port open: ${route.destination.portName} on ${route.destination.serverUrl}`
             )
             await this.openPort(
               route.destination.serverUrl,

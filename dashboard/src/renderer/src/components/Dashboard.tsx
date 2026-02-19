@@ -25,7 +25,6 @@ import type { ServerProcess, BuildInfo } from '@/platform'
 
 const DISCOVERY_POLL_INTERVAL = 5000
 const SERVER_STATUS_CHECK_INTERVAL = 10000
-const DEFAULT_SERVER_PORT = 8080
 
 export function Dashboard(): React.JSX.Element {
   const platform = usePlatform()
@@ -174,7 +173,7 @@ export function Dashboard(): React.JSX.Element {
 
   const handleStartServer = useCallback(async () => {
     try {
-      const process = await platform.startServer(DEFAULT_SERVER_PORT)
+      const process = await platform.startServer()
       setServerProcess(process)
       connect()
     } catch (err) {

@@ -90,7 +90,7 @@ export class ApiServer {
   private initializeRoutingServices(localUrl: string): void {
     this.routesStorage = new RoutesStorage()
     this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
-    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort)
+    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort, this.logBuffer)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
