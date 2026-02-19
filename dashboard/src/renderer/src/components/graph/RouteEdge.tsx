@@ -9,6 +9,40 @@ interface RouteEdgeProps extends EdgeProps<RouteEdge> {
   onDeleteRoute?: (routeId: string) => void
 }
 
+// Custom comparison to prevent re-renders when data hasn't changed
+function arePropsEqual(prev: RouteEdgeProps, next: RouteEdgeProps): boolean {
+  // Check edge positions (important for layout changes)
+  if (
+    prev.sourceX !== next.sourceX ||
+    prev.sourceY !== next.sourceY ||
+    prev.targetX !== next.targetX ||
+    prev.targetY !== next.targetY
+  ) {
+    return false
+  }
+
+  // Check selection state
+  if (prev.selected !== next.selected) {
+    return false
+  }
+
+  // Check data
+  const prevData = prev.data
+  const nextData = next.data
+
+  if (!prevData && !nextData) return true
+  if (!prevData || !nextData) return false
+
+  return (
+    prevData.routeId === nextData.routeId &&
+    prevData.enabled === nextData.enabled &&
+    prevData.status === nextData.status &&
+    prevData.messagesRouted === nextData.messagesRouted &&
+    prevData.lastMessageTime === nextData.lastMessageTime &&
+    prevData.isAnimating === nextData.isAnimating
+  )
+}
+
 function RouteEdgeComponent({
   id,
   sourceX,
@@ -74,4 +108,4 @@ function RouteEdgeComponent({
   )
 }
 
-export const RouteEdge = memo(RouteEdgeComponent)
+export const RouteEdge = memo(RouteEdgeComponent, arePropsEqual)

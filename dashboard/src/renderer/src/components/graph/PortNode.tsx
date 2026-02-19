@@ -5,6 +5,22 @@ import type { PortNodeData } from '@/hooks/useRouteGraph'
 
 type PortNode = Node<PortNodeData, 'port'>
 
+// Custom comparison to prevent re-renders when data hasn't changed
+function arePropsEqual(
+  prev: NodeProps<PortNode>,
+  next: NodeProps<PortNode>
+): boolean {
+  const prevData = prev.data
+  const nextData = next.data
+  return (
+    prevData.label === nextData.label &&
+    prevData.serverUrl === nextData.serverUrl &&
+    prevData.serverName === nextData.serverName &&
+    prevData.inputPortId === nextData.inputPortId &&
+    prevData.outputPortId === nextData.outputPortId
+  )
+}
+
 function PortNodeComponent({ data }: NodeProps<PortNode>): React.JSX.Element {
   const hasInput = data.inputPortId !== null
   const hasOutput = data.outputPortId !== null
@@ -45,4 +61,4 @@ function PortNodeComponent({ data }: NodeProps<PortNode>): React.JSX.Element {
   )
 }
 
-export const PortNode = memo(PortNodeComponent)
+export const PortNode = memo(PortNodeComponent, arePropsEqual)

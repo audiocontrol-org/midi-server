@@ -1,7 +1,57 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 import type { Route, DiscoveredServer } from '@/api/client'
 import type { PortsResponse } from '@/types/api'
+
+// Deep equality check for node data
+function isNodeDataEqual(a: Node, b: Node): boolean {
+  if (a.id !== b.id || a.type !== b.type) return false
+  if (a.position.x !== b.position.x || a.position.y !== b.position.y) return false
+
+  const dataA = a.data as Record<string, unknown>
+  const dataB = b.data as Record<string, unknown>
+  const keysA = Object.keys(dataA)
+  const keysB = Object.keys(dataB)
+
+  if (keysA.length !== keysB.length) return false
+  return keysA.every((key) => dataA[key] === dataB[key])
+}
+
+// Deep equality check for edge data
+function isEdgeDataEqual(a: Edge, b: Edge): boolean {
+  if (a.id !== b.id) return false
+  if (a.source !== b.source || a.target !== b.target) return false
+  if (a.sourceHandle !== b.sourceHandle || a.targetHandle !== b.targetHandle) return false
+
+  if (!a.data && !b.data) return true
+  if (!a.data || !b.data) return false
+
+  const dataA = a.data as Record<string, unknown>
+  const dataB = b.data as Record<string, unknown>
+  const keysA = Object.keys(dataA)
+  const keysB = Object.keys(dataB)
+
+  if (keysA.length !== keysB.length) return false
+  return keysA.every((key) => dataA[key] === dataB[key])
+}
+
+// Compare arrays and return previous if unchanged
+function useStableArray<T>(
+  computed: T[],
+  isEqual: (a: T, b: T) => boolean
+): T[] {
+  const prevRef = useRef<T[]>(computed)
+
+  const isSame =
+    prevRef.current.length === computed.length &&
+    computed.every((item, i) => isEqual(item, prevRef.current[i]))
+
+  if (!isSame) {
+    prevRef.current = computed
+  }
+
+  return prevRef.current
+}
 
 const SERVER_SPACING_X = 350
 const PORT_SPACING_Y = 45
@@ -19,7 +69,6 @@ export interface PortNodeData extends Record<string, unknown> {
   label: string
   serverUrl: string
   serverName: string
-  // Port IDs - null if port doesn't exist in that direction
   inputPortId: string | null
   outputPortId: string | null
 }
@@ -47,9 +96,6 @@ interface UseRouteGraphReturn {
   loading: boolean
 }
 
-// Animation threshold - messages within this time are considered "recent"
-const ANIMATION_THRESHOLD_MS = 2000
-
 interface FetchState {
   ports: Map<string, PortsResponse>
   loading: boolean
@@ -66,95 +112,43 @@ export function useRouteGraph({
     ports: new Map(),
     loading: servers.length > 0
   })
-  const prevMessageCountsRef = useRef<Map<string, number>>(new Map())
-  const animationTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const [animatingEdges, setAnimatingEdges] = useState<Set<string>>(new Set())
 
-  // Async fetch function that updates state
-  const fetchAllPorts = useCallback(async (): Promise<void> => {
+  // Fetch ports when servers change
+  const serverUrls = servers.map((s) => s.apiUrl).join(',')
+  useEffect(() => {
     if (servers.length === 0) {
       setFetchState({ ports: new Map(), loading: false })
       return
     }
 
+    let cancelled = false
     setFetchState((prev) => ({ ...prev, loading: true }))
 
-    const portsMap = new Map<string, PortsResponse>()
-
-    await Promise.all(
-      servers.map(async (server) => {
-        try {
-          const ports = await fetchServerPorts(server.apiUrl)
-          portsMap.set(server.apiUrl, ports)
-        } catch (err) {
-          console.error(`Failed to fetch ports for ${server.apiUrl}:`, err)
-        }
-      })
-    )
-
-    setFetchState({ ports: portsMap, loading: false })
-  }, [servers, fetchServerPorts])
-
-  // Fetch ports when servers change
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Data fetching requires setState in effect
-    fetchAllPorts()
-  }, [fetchAllPorts])
-
-  // Process animation state changes
-  const processAnimations = useCallback((routeList: Route[]): void => {
-    const currentCounts = new Map<string, number>()
-    const newAnimatingIds: string[] = []
-    const timersRef = animationTimersRef.current
-
-    routeList.forEach((route) => {
-      const count = route.status?.messagesRouted ?? 0
-      currentCounts.set(route.id, count)
-
-      const prevCount = prevMessageCountsRef.current.get(route.id) ?? 0
-      const lastMessageTime = route.status?.lastMessageTime ?? 0
-      const isRecent = Date.now() - lastMessageTime < ANIMATION_THRESHOLD_MS
-
-      if (count > prevCount || isRecent) {
-        newAnimatingIds.push(route.id)
-
-        // Clear any existing timer for this route
-        const existingTimer = timersRef.get(route.id)
-        if (existingTimer) {
-          clearTimeout(existingTimer)
-        }
-
-        // Set timer to clear animation after 1 second
-        const timer = setTimeout(() => {
-          setAnimatingEdges((prev) => {
-            const next = new Set(prev)
-            next.delete(route.id)
-            return next
-          })
-          timersRef.delete(route.id)
-        }, 1000)
-        timersRef.set(route.id, timer)
+    const fetchAll = async (): Promise<void> => {
+      const portsMap = new Map<string, PortsResponse>()
+      await Promise.all(
+        servers.map(async (server) => {
+          try {
+            const ports = await fetchServerPorts(server.apiUrl)
+            portsMap.set(server.apiUrl, ports)
+          } catch (err) {
+            console.error(`Failed to fetch ports for ${server.apiUrl}:`, err)
+          }
+        })
+      )
+      if (!cancelled) {
+        setFetchState({ ports: portsMap, loading: false })
       }
-    })
-
-    if (newAnimatingIds.length > 0) {
-      setAnimatingEdges((prev) => new Set([...prev, ...newAnimatingIds]))
     }
-    prevMessageCountsRef.current = currentCounts
-  }, [])
 
-  // Track message count changes for animation
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Animation tracking requires setState in effect
-    processAnimations(routes)
-
-    // Cleanup timers on unmount
-    const timers = animationTimersRef.current
-    return (): void => {
-      timers.forEach((timer) => clearTimeout(timer))
+    fetchAll()
+    return () => {
+      cancelled = true
     }
-  }, [routes, processAnimations])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverUrls, fetchServerPorts])
 
+  // Compute nodes
   const nodes = useMemo((): Node[] => {
     const result: Node[] = []
 
@@ -163,7 +157,6 @@ export function useRouteGraph({
       const serverX = savedPositions.get(serverNodeId)?.x ?? serverIndex * SERVER_SPACING_X
       const serverY = savedPositions.get(serverNodeId)?.y ?? SERVER_START_Y
 
-      // Add server node
       result.push({
         id: serverNodeId,
         type: 'server',
@@ -176,10 +169,8 @@ export function useRouteGraph({
         } satisfies ServerNodeData
       })
 
-      // Combine input/output ports by name
       const ports = fetchState.ports.get(server.apiUrl)
       if (ports) {
-        // Build a map of port name -> { inputId, outputId }
         const portsByName = new Map<string, { inputId: string | null; outputId: string | null }>()
 
         ports.inputs.forEach((port) => {
@@ -194,20 +185,16 @@ export function useRouteGraph({
           portsByName.set(port.name, existing)
         })
 
-        // Create unified port nodes
         let portIndex = 0
         portsByName.forEach((portIds, portName) => {
           const portNodeId = `port:${server.apiUrl}:${portName}`
-          const defaultX = serverX
-          const defaultY = PORT_START_Y + portIndex * PORT_SPACING_Y
+          const x = savedPositions.get(portNodeId)?.x ?? serverX
+          const y = savedPositions.get(portNodeId)?.y ?? PORT_START_Y + portIndex * PORT_SPACING_Y
 
           result.push({
             id: portNodeId,
             type: 'port',
-            position: {
-              x: savedPositions.get(portNodeId)?.x ?? defaultX,
-              y: savedPositions.get(portNodeId)?.y ?? defaultY
-            },
+            position: { x, y },
             data: {
               label: portName,
               serverUrl: server.apiUrl,
@@ -224,7 +211,7 @@ export function useRouteGraph({
     return result
   }, [servers, fetchState.ports, serverStatuses, savedPositions])
 
-  // Helper to resolve serverUrl (handles "local" -> actual URL)
+  // Helper to resolve serverUrl
   const resolveServerUrl = useCallback(
     (serverUrl: string): string => {
       if (serverUrl === 'local') {
@@ -241,7 +228,6 @@ export function useRouteGraph({
     (serverUrl: string, portId: string, type: 'input' | 'output'): string | null => {
       const ports = fetchState.ports.get(serverUrl)
       if (!ports) return null
-
       const portList = type === 'input' ? ports.inputs : ports.outputs
       const port = portList.find((p) => String(p.id) === portId)
       return port?.name ?? null
@@ -249,40 +235,26 @@ export function useRouteGraph({
     [fetchState.ports]
   )
 
-  // Helper to parse portId which may be "input-4" or "output-5" format, or just "4"
-  const parsePortId = (portId: string): { type: 'input' | 'output'; id: string } | null => {
-    if (portId.startsWith('input-')) {
-      return { type: 'input', id: portId.slice(6) }
-    }
-    if (portId.startsWith('output-')) {
-      return { type: 'output', id: portId.slice(7) }
-    }
-    // Fallback: assume it's just the numeric ID
-    return null
-  }
-
-  const edges = useMemo((): Edge[] => {
+  // Compute edges
+  const computedEdges = useMemo((): Edge[] => {
     return routes.map((route) => {
-      // Resolve server URLs (handle "local" -> actual URL)
       const sourceServerUrl = resolveServerUrl(route.source.serverUrl)
       const destServerUrl = resolveServerUrl(route.destination.serverUrl)
 
-      // Parse port IDs to get the numeric ID
-      const sourceParsed = parsePortId(route.source.portId)
-      const destParsed = parsePortId(route.destination.portId)
+      const parsePortId = (portId: string): string => {
+        if (portId.startsWith('input-')) return portId.slice(6)
+        if (portId.startsWith('output-')) return portId.slice(7)
+        return portId
+      }
 
-      const sourcePortId = sourceParsed?.id ?? route.source.portId
-      const destPortId = destParsed?.id ?? route.destination.portId
+      const sourcePortId = parsePortId(route.source.portId)
+      const destPortId = parsePortId(route.destination.portId)
 
-      // Find port names to build unified node IDs
-      // route.source is INPUT port (receives MIDI from external)
-      // route.destination is OUTPUT port (sends MIDI to external)
       const sourcePortName =
         route.source.portName || findPortName(sourceServerUrl, sourcePortId, 'input')
       const destPortName =
         route.destination.portName || findPortName(destServerUrl, destPortId, 'output')
 
-      // Build unified node IDs using port names
       const sourceNodeId = sourcePortName
         ? `port:${sourceServerUrl}:${sourcePortName}`
         : `port:${sourceServerUrl}:unknown-${sourcePortId}`
@@ -290,9 +262,6 @@ export function useRouteGraph({
         ? `port:${destServerUrl}:${destPortName}`
         : `port:${destServerUrl}:unknown-${destPortId}`
 
-      // Edge goes from source (INPUT) node to destination (OUTPUT) node
-      // Route: source INPUT port receives MIDI -> destination OUTPUT port sends MIDI
-      // Visual: source node outlet (right) -> destination node inlet (left) = left-to-right flow
       return {
         id: `route:${route.id}`,
         source: sourceNodeId,
@@ -306,16 +275,19 @@ export function useRouteGraph({
           status: route.status?.status ?? 'disabled',
           messagesRouted: route.status?.messagesRouted ?? 0,
           lastMessageTime: route.status?.lastMessageTime ?? null,
-          isAnimating: animatingEdges.has(route.id)
+          isAnimating: false
         } satisfies RouteEdgeData
       }
     })
-  }, [routes, animatingEdges, resolveServerUrl, findPortName])
+  }, [routes, resolveServerUrl, findPortName])
 
-  return { nodes, edges, loading: fetchState.loading }
+  // Stabilize arrays - only return new references when data actually changes
+  const stableNodes = useStableArray(nodes, isNodeDataEqual)
+  const stableEdges = useStableArray(computedEdges, isEdgeDataEqual)
+
+  return { nodes: stableNodes, edges: stableEdges, loading: fetchState.loading }
 }
 
-// Helper to extract port info from node ID (updated for unified nodes)
 export function getPortFromNodeId(
   nodeId: string | null,
   handleId: string | null
@@ -324,7 +296,6 @@ export function getPortFromNodeId(
   const parts = nodeId.split(':')
   if (parts[0] !== 'port' || parts.length < 3) return null
 
-  // Handle URLs with colons by taking the last part as port name
   const portName = parts[parts.length - 1]
   const serverUrl = parts.slice(1, -1).join(':')
 

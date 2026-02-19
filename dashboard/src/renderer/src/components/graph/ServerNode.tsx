@@ -4,6 +4,21 @@ import type { ServerNodeData } from '@/hooks/useRouteGraph'
 
 type ServerNode = Node<ServerNodeData, 'server'>
 
+// Custom comparison to prevent re-renders when data hasn't changed
+function arePropsEqual(
+  prev: NodeProps<ServerNode>,
+  next: NodeProps<ServerNode>
+): boolean {
+  const prevData = prev.data
+  const nextData = next.data
+  return (
+    prevData.label === nextData.label &&
+    prevData.apiUrl === nextData.apiUrl &&
+    prevData.isLocal === nextData.isLocal &&
+    prevData.connectionStatus === nextData.connectionStatus
+  )
+}
+
 function ServerNodeComponent({ data }: NodeProps<ServerNode>): React.JSX.Element {
   const statusColors = {
     connected: 'bg-green-500',
@@ -27,4 +42,4 @@ function ServerNodeComponent({ data }: NodeProps<ServerNode>): React.JSX.Element
   )
 }
 
-export const ServerNode = memo(ServerNodeComponent)
+export const ServerNode = memo(ServerNodeComponent, arePropsEqual)

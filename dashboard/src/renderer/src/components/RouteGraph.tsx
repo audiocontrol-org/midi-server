@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   ReactFlow,
   Background,
@@ -8,7 +8,7 @@ import {
   useNodesState,
   useEdgesState
 } from '@xyflow/react'
-import type { Connection, NodeChange, OnNodesChange, Edge } from '@xyflow/react'
+import type { Connection, NodeChange, OnNodesChange, Edge, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
 import { ServerNode } from '@/components/graph/ServerNode'
@@ -49,9 +49,10 @@ export function RouteGraph({
 }: RouteGraphProps): React.JSX.Element {
   const { positions, updatePosition } = useNodePositions()
 
+  // Get computed nodes/edges from hook (stable arrays - only change when data changes)
   const {
-    nodes: graphNodes,
-    edges: graphEdges,
+    nodes: stableNodes,
+    edges: stableEdges,
     loading
   } = useRouteGraph({
     routes,
@@ -61,21 +62,52 @@ export function RouteGraph({
     savedPositions: positions
   })
 
-  const [nodes, setNodes, onNodesChangeBase] = useNodesState(graphNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(graphEdges)
+  // React Flow's internal state
+  const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
-  // Update nodes/edges when graph data changes
-  useMemo(() => {
-    setNodes(graphNodes)
-    setEdges(graphEdges)
-  }, [graphNodes, graphEdges, setNodes, setEdges])
+  // Track previous stable arrays to detect actual changes
+  const prevNodesRef = useRef<Node[]>([])
+  const prevEdgesRef = useRef<Edge[]>([])
+
+  // Sync nodes only when the stable array reference changes
+  useEffect(() => {
+    if (loading) return
+    if (stableNodes === prevNodesRef.current) return
+
+    prevNodesRef.current = stableNodes
+
+    setNodes((currentNodes) => {
+      if (currentNodes.length === 0) {
+        return stableNodes
+      }
+
+      // Merge: preserve user-dragged positions
+      const currentPosMap = new Map(currentNodes.map((n) => [n.id, n.position]))
+      return stableNodes.map((node) => {
+        const currentPos = currentPosMap.get(node.id)
+        if (currentPos && (currentPos.x !== node.position.x || currentPos.y !== node.position.y)) {
+          return { ...node, position: currentPos }
+        }
+        return node
+      })
+    })
+  }, [stableNodes, loading, setNodes])
+
+  // Sync edges only when the stable array reference changes
+  useEffect(() => {
+    if (loading) return
+    if (stableEdges === prevEdgesRef.current) return
+
+    prevEdgesRef.current = stableEdges
+    setEdges(stableEdges)
+  }, [stableEdges, loading, setEdges])
 
   // Track position changes and persist them
   const onNodesChange: OnNodesChange = useCallback(
     (changes: NodeChange[]) => {
       onNodesChangeBase(changes)
 
-      // Find position changes and persist them
       changes.forEach((change) => {
         if (change.type === 'position' && change.position && !change.dragging) {
           updatePosition(change.id, change.position)
@@ -86,21 +118,13 @@ export function RouteGraph({
   )
 
   // Validate connections
-  // User drags from outlet (source handle) to inlet (target handle)
-  // This creates a route: inlet's port receives MIDI, outlet's port sends MIDI
   const isValidConnection = useCallback(
     (connection: Edge | Connection): boolean => {
-      // Must have handle IDs
       if (!connection.sourceHandle || !connection.targetHandle) return false
-
-      // Must be outlet -> inlet
       if (connection.sourceHandle !== 'outlet') return false
       if (connection.targetHandle !== 'inlet') return false
-
-      // Source and target must be different nodes
       if (connection.source === connection.target) return false
 
-      // Validate nodes exist and have appropriate handles
       const sourceNode = nodes.find((n) => n.id === connection.source)
       const targetNode = nodes.find((n) => n.id === connection.target)
 
@@ -109,8 +133,6 @@ export function RouteGraph({
       const sourceData = sourceNode.data as PortNodeData
       const targetData = targetNode.data as PortNodeData
 
-      // Source must have an input port (route receives MIDI from source's input)
-      // Target must have an output port (route sends MIDI to target's output)
       if (!sourceData.inputPortId) return false
       if (!targetData.outputPortId) return false
 
@@ -119,11 +141,7 @@ export function RouteGraph({
     [nodes]
   )
 
-  // Handle new connections - create routes
-  // Graph: user drags from OUTLET (source node) to INLET (target node)
-  // User intent: send MIDI from source node to target node
-  // MIDI routing: route.source = INPUT port (receives MIDI), route.destination = OUTPUT port (sends MIDI)
-  // So: route.source = source node's INPUT, route.destination = target node's OUTPUT
+  // Handle new connections
   const onConnect = useCallback(
     async (connection: Connection) => {
       const sourceInfo = getPortFromNodeId(connection.source, connection.sourceHandle ?? null)
@@ -131,7 +149,6 @@ export function RouteGraph({
 
       if (!sourceInfo || !targetInfo) return
 
-      // Get node data for port IDs
       const sourceNode = nodes.find((n) => n.id === connection.source)
       const targetNode = nodes.find((n) => n.id === connection.target)
 
@@ -140,8 +157,6 @@ export function RouteGraph({
       const sourceData = sourceNode.data as PortNodeData
       const targetData = targetNode.data as PortNodeData
 
-      // Route source = source node's INPUT port (receives MIDI from external device)
-      // Route destination = target node's OUTPUT port (sends MIDI to external device)
       const routeSource: RouteEndpoint = {
         serverUrl: sourceInfo.serverUrl,
         portId: sourceData.inputPortId ?? '',
@@ -163,7 +178,7 @@ export function RouteGraph({
     [nodes, onCreateRoute]
   )
 
-  // Handle edge deletion via keyboard
+  // Handle edge deletion
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (event.key === 'Delete' || event.key === 'Backspace') {

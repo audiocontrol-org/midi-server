@@ -327,14 +327,20 @@ export function Dashboard(): React.JSX.Element {
     }
   }, [])
 
+  // Use refs to avoid recreating the callback when ports/localServerUrl change
+  const portsRef = useRef(ports)
+  const localServerUrlRef = useRef(localServerUrl)
+  portsRef.current = ports
+  localServerUrlRef.current = localServerUrl
+
   const fetchServerPorts = useCallback(
     async (serverUrl: string): Promise<{ inputs: MidiPort[]; outputs: MidiPort[] }> => {
-      if (serverUrl === localServerUrl && ports) {
-        return ports
+      if (serverUrl === localServerUrlRef.current && portsRef.current) {
+        return portsRef.current
       }
       return apiClientRef.current.getRemoteServerPorts(serverUrl)
     },
-    [localServerUrl, ports]
+    []
   )
 
   // Remote server management callbacks
