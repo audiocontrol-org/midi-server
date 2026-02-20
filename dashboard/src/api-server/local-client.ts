@@ -135,6 +135,43 @@ export class LocalClient implements MidiClient {
       body: JSON.stringify({ message })
     })
   }
+
+  // Virtual port methods - these call C++ /virtual/* endpoints
+
+  async getVirtualPorts(): Promise<{ inputs: string[]; outputs: string[] }> {
+    return this.request<{ inputs: string[]; outputs: string[] }>('/virtual')
+  }
+
+  async createVirtualPort(
+    portId: string,
+    name: string,
+    type: 'input' | 'output'
+  ): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/virtual/${portId}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, type })
+    })
+  }
+
+  async deleteVirtualPort(portId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/virtual/${portId}`, {
+      method: 'DELETE'
+    })
+  }
+
+  async getVirtualMessages(portId: string): Promise<{ messages: number[][] }> {
+    return this.request<{ messages: number[][] }>(`/virtual/${portId}/messages`)
+  }
+
+  async sendVirtualMessage(
+    portId: string,
+    message: number[]
+  ): Promise<{ success: boolean; error?: string }> {
+    return this.request<{ success: boolean; error?: string }>(`/virtual/${portId}/send`, {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    })
+  }
 }
 
 const localClientCache = new Map<number, LocalClient>()

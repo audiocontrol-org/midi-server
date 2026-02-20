@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { Node, Edge } from '@xyflow/react'
-import type { Route, DiscoveredServer } from '@/api/client'
+import type { Route, DiscoveredServer, VirtualPortConfig } from '@/api/client'
 import type { PortsResponse } from '@/types/api'
 
 // Deep equality check for node data
@@ -77,6 +77,7 @@ export interface PortNodeData extends Record<string, unknown> {
   serverName: string
   inputPortId: string | null
   outputPortId: string | null
+  isVirtual?: boolean
 }
 
 export interface RouteEdgeData extends Record<string, unknown> {
@@ -91,6 +92,7 @@ export interface RouteEdgeData extends Record<string, unknown> {
 interface UseRouteGraphOptions {
   routes: Route[]
   servers: DiscoveredServer[]
+  virtualPorts: VirtualPortConfig[]
   serverStatuses: Map<string, 'connected' | 'disconnected' | 'checking'>
   fetchServerPorts: (serverUrl: string) => Promise<PortsResponse>
   savedPositions: Map<string, { x: number; y: number }>
@@ -110,6 +112,7 @@ interface FetchState {
 export function useRouteGraph({
   routes,
   servers,
+  virtualPorts,
   serverStatuses,
   fetchServerPorts,
   savedPositions
@@ -164,19 +167,34 @@ export function useRouteGraph({
       const serverY = savedPositions.get(serverNodeId)?.y ?? 50
 
       const ports = fetchState.ports.get(server.apiUrl)
-      const portsByName = new Map<string, { inputId: string | null; outputId: string | null }>()
+      const portsByName = new Map<string, { inputId: string | null; outputId: string | null; isVirtual: boolean }>()
 
       if (ports) {
         ports.inputs.forEach((port) => {
-          const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null }
+          const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null, isVirtual: false }
           existing.inputId = String(port.id)
           portsByName.set(port.name, existing)
         })
 
         ports.outputs.forEach((port) => {
-          const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null }
+          const existing = portsByName.get(port.name) ?? { inputId: null, outputId: null, isVirtual: false }
           existing.outputId = String(port.id)
           portsByName.set(port.name, existing)
+        })
+      }
+
+      // Add virtual ports for local server
+      if (server.isLocal) {
+        virtualPorts.forEach((vp) => {
+          // Use the virtual port name as the key
+          const existing = portsByName.get(vp.name) ?? { inputId: null, outputId: null, isVirtual: true }
+          existing.isVirtual = true
+          if (vp.type === 'input') {
+            existing.inputId = `virtual:${vp.id}`
+          } else {
+            existing.outputId = `virtual:${vp.id}`
+          }
+          portsByName.set(vp.name, existing)
         })
       }
 
@@ -225,7 +243,8 @@ export function useRouteGraph({
             serverUrl: server.apiUrl,
             serverName: server.isLocal ? 'Local' : server.serverName,
             inputPortId: portIds.inputId,
-            outputPortId: portIds.outputId
+            outputPortId: portIds.outputId,
+            isVirtual: portIds.isVirtual
           } satisfies PortNodeData
         })
         portIndex++
@@ -233,7 +252,7 @@ export function useRouteGraph({
     })
 
     return result
-  }, [servers, fetchState.ports, serverStatuses, savedPositions])
+  }, [servers, fetchState.ports, serverStatuses, savedPositions, virtualPorts])
 
   // Helper to resolve serverUrl
   const resolveServerUrl = useCallback(

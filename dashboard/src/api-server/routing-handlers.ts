@@ -1,19 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { DiscoveryService } from './discovery'
 import type { RoutesStorage, Route, RouteEndpoint } from './routes-storage'
+import type { VirtualPortsStorage } from './virtual-ports-storage'
 import type { RoutingEngine } from './routing-engine'
 import { getMidiClient } from './client-factory'
+import { getLocalClient } from './local-client'
 
 interface RoutingServices {
   discovery: DiscoveryService
   routes: RoutesStorage
+  virtualPorts: VirtualPortsStorage
   routingEngine: RoutingEngine
   localServerUrl: string
   localMidiServerPort: number
 }
 
 export function createRoutingHandlers(services: RoutingServices) {
-  const { discovery, routes, routingEngine, localServerUrl, localMidiServerPort } = services
+  const { discovery, routes, virtualPorts, routingEngine, localServerUrl, localMidiServerPort } =
+    services
 
   function sendJson(res: ServerResponse, data: unknown, status = 200): void {
     res.statusCode = status
@@ -263,6 +267,94 @@ export function createRoutingHandlers(services: RoutingServices) {
     }
   }
 
+  // Virtual port endpoints
+  async function handleGetVirtualPorts(res: ServerResponse): Promise<void> {
+    try {
+      // Get stored virtual ports config
+      const storedPorts = virtualPorts.getAll()
+
+      // Also get live data from C++ binary to verify ports exist
+      const client = getLocalClient(localMidiServerPort)
+      let livePorts: { inputs: string[]; outputs: string[] } = { inputs: [], outputs: [] }
+      try {
+        livePorts = await client.getVirtualPorts()
+      } catch {
+        // C++ binary may not be running, just return stored ports
+      }
+
+      sendJson(res, {
+        virtualPorts: storedPorts,
+        liveInputs: livePorts.inputs,
+        liveOutputs: livePorts.outputs
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to get virtual ports: ${message}`, 500)
+    }
+  }
+
+  async function handleCreateVirtualPort(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJsonBody<{
+      name: string
+      type: 'input' | 'output'
+      isAutoCreated?: boolean
+      associatedRouteId?: string
+    }>(req)
+
+    if (!body?.name || !body?.type) {
+      sendError(res, 'Missing name or type field')
+      return
+    }
+
+    if (body.type !== 'input' && body.type !== 'output') {
+      sendError(res, 'Type must be "input" or "output"')
+      return
+    }
+
+    try {
+      // Save to storage first
+      const port = virtualPorts.create({
+        name: body.name,
+        type: body.type,
+        isAutoCreated: body.isAutoCreated ?? false,
+        associatedRouteId: body.associatedRouteId
+      })
+
+      // Create in C++ binary
+      const client = getLocalClient(localMidiServerPort)
+      await client.createVirtualPort(port.id, port.name, port.type)
+
+      sendJson(res, { virtualPort: port }, 201)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to create virtual port: ${message}`, 500)
+    }
+  }
+
+  async function handleDeleteVirtualPort(res: ServerResponse, portId: string): Promise<void> {
+    try {
+      // Delete from C++ binary first
+      const client = getLocalClient(localMidiServerPort)
+      try {
+        await client.deleteVirtualPort(portId)
+      } catch {
+        // Port may not exist in binary, continue with storage deletion
+      }
+
+      // Delete from storage
+      const deleted = virtualPorts.delete(portId)
+      if (!deleted) {
+        sendError(res, 'Virtual port not found', 404)
+        return
+      }
+
+      sendJson(res, { success: true })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to delete virtual port: ${message}`, 500)
+    }
+  }
+
   return {
     handleDiscoveryServers,
     handleDiscoveryStatus,
@@ -277,7 +369,10 @@ export function createRoutingHandlers(services: RoutingServices) {
     handleRemoteServerSend,
     handleRemoteServerStatus,
     handleRemoteServerStart,
-    handleRemoteServerStop
+    handleRemoteServerStop,
+    handleGetVirtualPorts,
+    handleCreateVirtualPort,
+    handleDeleteVirtualPort
   }
 }
 

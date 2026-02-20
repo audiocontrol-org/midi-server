@@ -1,6 +1,15 @@
 import type { LogEntry, LogSeverity, BuildInfo } from '@shared/types/log-entry'
 import type { UpdateService } from '@shared/types/update'
 
+export interface VirtualPortConfig {
+  id: string // e.g., "virtual-1708123456789-abc123"
+  name: string // Display name
+  type: 'input' | 'output' // Port type
+  createdAt: number // Timestamp
+  isAutoCreated: boolean // Whether auto-created by route
+  associatedRouteId?: string // Link to creating route
+}
+
 export interface ServerStatus {
   running: boolean
   pid: number | null

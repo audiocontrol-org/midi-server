@@ -11,6 +11,7 @@ import { BuildInfoModal } from '@/components/BuildInfoModal'
 import { RoutingPanel } from '@/components/RoutingPanel'
 import { RouteGraph } from '@/components/RouteGraph'
 import { AddRouteModal } from '@/components/AddRouteModal'
+import { AddVirtualPortModal } from '@/components/AddVirtualPortModal'
 import { AppShell, PageHeader, ServerStatus, ServerActions, type TabId } from '@/components/layout'
 import '@/styles/layout.css'
 import {
@@ -18,7 +19,8 @@ import {
   createApiClient,
   type DiscoveredServer,
   type Route,
-  type RouteEndpoint
+  type RouteEndpoint,
+  type VirtualPortConfig
 } from '@/api/client'
 import type { MidiPort, MidiMessage, OpenPort } from '@/types/api'
 import type { ServerProcess, BuildInfo } from '@/platform'
@@ -56,6 +58,10 @@ export function Dashboard(): React.JSX.Element {
   // Routing state
   const [routes, setRoutes] = useState<Route[]>([])
   const [isAddRouteModalOpen, setIsAddRouteModalOpen] = useState(false)
+
+  // Virtual port state
+  const [virtualPorts, setVirtualPorts] = useState<VirtualPortConfig[]>([])
+  const [isAddVirtualPortModalOpen, setIsAddVirtualPortModalOpen] = useState(false)
 
   // Fetch build info on mount
   useEffect(() => {
@@ -146,6 +152,22 @@ export function Dashboard(): React.JSX.Element {
 
     fetchRoutes()
     const interval = setInterval(fetchRoutes, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Fetch virtual ports
+  useEffect(() => {
+    const fetchVirtualPorts = async (): Promise<void> => {
+      try {
+        const response = await apiClientRef.current.getVirtualPorts()
+        setVirtualPorts(response.virtualPorts)
+      } catch (err) {
+        console.error('Failed to fetch virtual ports:', err)
+      }
+    }
+
+    fetchVirtualPorts()
+    const interval = setInterval(fetchVirtualPorts, 5000)
     return () => clearInterval(interval)
   }, [])
 
@@ -288,6 +310,25 @@ export function Dashboard(): React.JSX.Element {
     }
   }, [])
 
+  const handleAddVirtualPort = useCallback(async (name: string, type: 'input' | 'output') => {
+    try {
+      const response = await apiClientRef.current.createVirtualPort({ name, type })
+      setVirtualPorts((prev) => [...prev, response.virtualPort])
+      setIsAddVirtualPortModalOpen(false)
+    } catch (err) {
+      console.error('Failed to create virtual port:', err)
+    }
+  }, [])
+
+  const handleDeleteVirtualPort = useCallback(async (portId: string) => {
+    try {
+      await apiClientRef.current.deleteVirtualPort(portId)
+      setVirtualPorts((prev) => prev.filter((port) => port.id !== portId))
+    } catch (err) {
+      console.error('Failed to delete virtual port:', err)
+    }
+  }, [])
+
   // Stable callback refs
   const portsRef = useRef(ports)
   const localServerUrlRef = useRef(localServerUrl)
@@ -420,9 +461,12 @@ export function Dashboard(): React.JSX.Element {
               <RoutingPanel
                 routes={routes}
                 servers={discoveredServers}
+                virtualPorts={virtualPorts}
                 onToggleRoute={handleToggleRoute}
                 onDeleteRoute={handleDeleteRoute}
                 onAddRoute={() => setIsAddRouteModalOpen(true)}
+                onAddVirtualPort={() => setIsAddVirtualPortModalOpen(true)}
+                onDeleteVirtualPort={handleDeleteVirtualPort}
               />
             </div>
           </>
@@ -447,6 +491,7 @@ export function Dashboard(): React.JSX.Element {
               <RouteGraph
                 routes={routes}
                 servers={discoveredServers}
+                virtualPorts={virtualPorts}
                 serverStatuses={serverStatuses}
                 fetchServerPorts={fetchServerPorts}
                 onCreateRoute={handleAddRoute}
@@ -492,9 +537,15 @@ export function Dashboard(): React.JSX.Element {
       <AddRouteModal
         isOpen={isAddRouteModalOpen}
         servers={discoveredServers}
+        virtualPorts={virtualPorts}
         onClose={() => setIsAddRouteModalOpen(false)}
         onSave={handleAddRoute}
         fetchServerPorts={fetchServerPorts}
+      />
+      <AddVirtualPortModal
+        isOpen={isAddVirtualPortModalOpen}
+        onClose={() => setIsAddVirtualPortModalOpen(false)}
+        onSave={handleAddVirtualPort}
       />
     </AppShell>
   )

@@ -18,12 +18,13 @@ import { useRouteGraph, getPortFromNodeId } from '@/hooks/useRouteGraph'
 import type { PortNodeData } from '@/hooks/useRouteGraph'
 import { useNodePositions } from '@/hooks/useNodePositions'
 import { useGraphGestures } from '@/hooks/useGraphGestures'
-import type { Route, DiscoveredServer, RouteEndpoint } from '@/api/client'
+import type { Route, DiscoveredServer, RouteEndpoint, VirtualPortConfig } from '@/api/client'
 import type { PortsResponse } from '@/types/api'
 
 interface RouteGraphProps {
   routes: Route[]
   servers: DiscoveredServer[]
+  virtualPorts: VirtualPortConfig[]
   serverStatuses: Map<string, 'connected' | 'disconnected' | 'checking'>
   fetchServerPorts: (serverUrl: string) => Promise<PortsResponse>
   onCreateRoute: (source: RouteEndpoint, destination: RouteEndpoint) => Promise<void>
@@ -43,6 +44,7 @@ const edgeTypes = {
 export function RouteGraph({
   routes,
   servers,
+  virtualPorts,
   serverStatuses,
   fetchServerPorts,
   onCreateRoute,
@@ -59,6 +61,7 @@ export function RouteGraph({
   } = useRouteGraph({
     routes,
     servers,
+    virtualPorts,
     serverStatuses,
     fetchServerPorts,
     savedPositions: positions

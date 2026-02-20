@@ -41,6 +41,21 @@ export interface RouteStatus {
   lastMessageTime: number | null
 }
 
+export interface VirtualPortConfig {
+  id: string
+  name: string
+  type: 'input' | 'output'
+  createdAt: number
+  isAutoCreated: boolean
+  associatedRouteId?: string
+}
+
+export interface VirtualPortsResponse {
+  virtualPorts: VirtualPortConfig[]
+  liveInputs: string[]
+  liveOutputs: string[]
+}
+
 export interface Route {
   id: string
   enabled: boolean
@@ -270,6 +285,29 @@ export class ApiClient {
     const encodedUrl = encodeURIComponent(serverUrl)
     return this.request<{ success: boolean }>(`/api/servers/${encodedUrl}/stop`, {
       method: 'POST'
+    })
+  }
+
+  // Virtual port management endpoints
+  async getVirtualPorts(): Promise<VirtualPortsResponse> {
+    return this.request<VirtualPortsResponse>('/api/virtual-ports')
+  }
+
+  async createVirtualPort(request: {
+    name: string
+    type: 'input' | 'output'
+    isAutoCreated?: boolean
+    associatedRouteId?: string
+  }): Promise<{ virtualPort: VirtualPortConfig }> {
+    return this.request<{ virtualPort: VirtualPortConfig }>('/api/virtual-ports', {
+      method: 'POST',
+      body: JSON.stringify(request)
+    })
+  }
+
+  async deleteVirtualPort(portId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/api/virtual-ports/${portId}`, {
+      method: 'DELETE'
     })
   }
 }

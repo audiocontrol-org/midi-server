@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { DiscoveredServer, RouteEndpoint } from '@/api/client'
+import type { DiscoveredServer, RouteEndpoint, VirtualPortConfig } from '@/api/client'
 import type { MidiPort } from '@/types/api'
 
 interface ServerPorts {
@@ -12,6 +12,7 @@ interface ServerPorts {
 interface AddRouteModalProps {
   isOpen: boolean
   servers: DiscoveredServer[]
+  virtualPorts: VirtualPortConfig[]
   onClose: () => void
   onSave: (source: RouteEndpoint, destination: RouteEndpoint) => void
   fetchServerPorts: (serverUrl: string) => Promise<{ inputs: MidiPort[]; outputs: MidiPort[] }>
@@ -20,6 +21,7 @@ interface AddRouteModalProps {
 export function AddRouteModal({
   isOpen,
   servers,
+  virtualPorts,
   onClose,
   onSave,
   fetchServerPorts
@@ -82,17 +84,47 @@ export function AddRouteModal({
     return server?.serverName ?? serverUrl
   }
 
+  // Convert virtual port to MidiPort format
+  const virtualToMidiPort = (vp: VirtualPortConfig): MidiPort => ({
+    id: vp.id,
+    name: vp.name,
+    type: vp.type,
+    isVirtual: true
+  })
+
   const getSourcePorts = (): MidiPort[] => {
     const state = serverPorts.get(sourceServer)
-    return state?.ports?.inputs ?? []
+    const physicalPorts = state?.ports?.inputs ?? []
+
+    // Add virtual input ports for local server
+    const server = servers.find((s) => s.apiUrl === sourceServer)
+    if (server?.isLocal) {
+      const virtualInputs = virtualPorts.filter((vp) => vp.type === 'input').map(virtualToMidiPort)
+      return [...physicalPorts, ...virtualInputs]
+    }
+
+    return physicalPorts
   }
 
   const getDestPorts = (): MidiPort[] => {
     const state = serverPorts.get(destServer)
-    return state?.ports?.outputs ?? []
+    const physicalPorts = state?.ports?.outputs ?? []
+
+    // Add virtual output ports for local server
+    const server = servers.find((s) => s.apiUrl === destServer)
+    if (server?.isLocal) {
+      const virtualOutputs = virtualPorts.filter((vp) => vp.type === 'output').map(virtualToMidiPort)
+      return [...physicalPorts, ...virtualOutputs]
+    }
+
+    return physicalPorts
   }
 
   const generatePortId = (port: MidiPort): string => {
+    // Virtual ports use "virtual:{id}" format
+    if (port.isVirtual) {
+      return `virtual:${port.id}`
+    }
     return `${port.type}-${port.id}`
   }
 
@@ -172,7 +204,7 @@ export function AddRouteModal({
             </option>
             {getSourcePorts().map((port) => (
               <option key={generatePortId(port)} value={generatePortId(port)}>
-                {port.name}
+                {port.isVirtual ? `[Virtual] ${port.name}` : port.name}
               </option>
             ))}
           </select>
@@ -216,7 +248,7 @@ export function AddRouteModal({
             </option>
             {getDestPorts().map((port) => (
               <option key={generatePortId(port)} value={generatePortId(port)}>
-                {port.name}
+                {port.isVirtual ? `[Virtual] ${port.name}` : port.name}
               </option>
             ))}
           </select>

@@ -7,9 +7,11 @@ import { LogBuffer } from './log-buffer'
 import { proxyToMidiServer } from './midi-proxy'
 import { DiscoveryService } from './discovery'
 import { RoutesStorage } from './routes-storage'
+import { VirtualPortsStorage } from './virtual-ports-storage'
 import { RoutingEngine } from './routing-engine'
 import { createRoutingHandlers, type RoutingHandlers } from './routing-handlers'
 import { UpdateHandlers } from './update-handlers'
+import { getLocalClient } from './local-client'
 
 export class ApiServer {
   private server: Server | null = null
@@ -22,6 +24,7 @@ export class ApiServer {
   // Routing services
   private discovery: DiscoveryService | null = null
   private routesStorage: RoutesStorage | null = null
+  private virtualPortsStorage: VirtualPortsStorage | null = null
   private routingEngine: RoutingEngine | null = null
   private routingHandlers: RoutingHandlers | null = null
   private updateHandlers: UpdateHandlers
@@ -89,22 +92,48 @@ export class ApiServer {
 
   private initializeRoutingServices(localUrl: string): void {
     this.routesStorage = new RoutesStorage()
+    this.virtualPortsStorage = new VirtualPortsStorage()
     this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
     this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort, this.logBuffer)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
       routes: this.routesStorage,
+      virtualPorts: this.virtualPortsStorage,
       routingEngine: this.routingEngine,
       localServerUrl: localUrl,
       localMidiServerPort: this.config.midiServerPort
     })
+
+    // Recreate persisted virtual ports in C++ binary
+    this.recreateVirtualPorts()
 
     // Start services
     this.discovery.start()
     this.routingEngine.start()
 
     console.log('[ApiServer] Routing services initialized')
+  }
+
+  private async recreateVirtualPorts(): Promise<void> {
+    if (!this.virtualPortsStorage) return
+
+    const ports = this.virtualPortsStorage.getAll()
+    if (ports.length === 0) return
+
+    console.log(`[ApiServer] Recreating ${ports.length} virtual ports...`)
+
+    const client = getLocalClient(this.config.midiServerPort)
+    for (const port of ports) {
+      try {
+        await client.createVirtualPort(port.id, port.name, port.type)
+        console.log(`[ApiServer] Recreated virtual port: ${port.name}`)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.error(`[ApiServer] Failed to recreate virtual port ${port.name}: ${message}`)
+        // Continue on error - don't fail startup
+      }
+    }
   }
 
   async stop(): Promise<void> {
@@ -240,6 +269,23 @@ export class ApiServer {
           }
           if (req.method === 'DELETE') {
             return this.routingHandlers.handleDeleteRoute(res, routeId)
+          }
+        }
+
+        // Virtual port management routes
+        if (path === '/api/virtual-ports' && req.method === 'GET') {
+          return await this.routingHandlers.handleGetVirtualPorts(res)
+        }
+        if (path === '/api/virtual-ports' && req.method === 'POST') {
+          return await this.routingHandlers.handleCreateVirtualPort(req, res)
+        }
+
+        // Virtual port CRUD with ID
+        const virtualPortMatch = path.match(/^\/api\/virtual-ports\/([^/]+)$/)
+        if (virtualPortMatch) {
+          const portId = virtualPortMatch[1]
+          if (req.method === 'DELETE') {
+            return await this.routingHandlers.handleDeleteVirtualPort(res, portId)
           }
         }
 

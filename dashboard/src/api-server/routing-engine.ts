@@ -2,9 +2,20 @@ import { EventEmitter } from 'events'
 import type { Route } from './routes-storage'
 import { RoutesStorage } from './routes-storage'
 import { getMidiClient } from './client-factory'
+import { getLocalClient } from './local-client'
 import type { LogBuffer } from './log-buffer'
 
 const POLL_INTERVAL = 50 // Poll input ports every 50ms for low latency
+
+// Virtual ports use the "virtual:" prefix in their portId
+function isVirtualPort(portId: string): boolean {
+  return portId.startsWith('virtual:')
+}
+
+// Extract the actual virtual port ID from the prefixed format
+function extractVirtualPortId(portId: string): string {
+  return portId.replace(/^virtual:/, '')
+}
 
 export interface RouteStatus {
   routeId: string
@@ -235,6 +246,15 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     type: 'input' | 'output'
   ): Promise<boolean> {
     const key = `${serverUrl}:${portId}`
+
+    // Virtual ports don't need to be "opened" - they're created via VirtualPortsStorage
+    // and exist in the C++ binary already. Just track them in openPorts Map.
+    if (isVirtualPort(portId)) {
+      this.log(`Virtual port ${name} (${type}) tracked - no open needed`)
+      this.failedPorts.delete(key)
+      return true
+    }
+
     try {
       this.log(`Opening port ${name} (${type}) on ${serverUrl}`)
       const client = getMidiClient(serverUrl, this.midiServerPort)
@@ -333,8 +353,17 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
     routes: Route[]
   ): Promise<void> {
     try {
-      const client = getMidiClient(serverUrl, this.midiServerPort)
-      const response = await client.getMessages(portId)
+      let response: { messages: number[][] }
+
+      // Use virtual port endpoint for virtual ports
+      if (isVirtualPort(portId)) {
+        const localClient = getLocalClient(this.midiServerPort)
+        const virtualId = extractVirtualPortId(portId)
+        response = await localClient.getVirtualMessages(virtualId)
+      } else {
+        const client = getMidiClient(serverUrl, this.midiServerPort)
+        response = await client.getMessages(portId)
+      }
 
       if (response.messages.length === 0) return
 
@@ -391,8 +420,15 @@ export class RoutingEngine extends EventEmitter<RoutingEvents> {
 
   private async forwardMessage(route: Route, message: number[]): Promise<void> {
     try {
-      const client = getMidiClient(route.destination.serverUrl, this.midiServerPort)
-      await client.sendMessage(route.destination.portId, message)
+      // Use virtual port endpoint for virtual destinations
+      if (isVirtualPort(route.destination.portId)) {
+        const localClient = getLocalClient(this.midiServerPort)
+        const virtualId = extractVirtualPortId(route.destination.portId)
+        await localClient.sendVirtualMessage(virtualId, message)
+      } else {
+        const client = getMidiClient(route.destination.serverUrl, this.midiServerPort)
+        await client.sendMessage(route.destination.portId, message)
+      }
 
       this.log(
         `Forwarded message to ${route.destination.serverUrl} port ${route.destination.portId}: [${message.slice(0, 3).join(', ')}${message.length > 3 ? '...' : ''}]`
