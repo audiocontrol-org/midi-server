@@ -48,3 +48,8 @@ cmake --build build
 
 - JUCE 8.0.0 (fetched via CMake)
 - cpp-httplib 0.14.3 (vendored in deps/)
+
+## Git Commits and Pull Requests
+
+- Never add Claude attribution (Co-Authored-By) to git commit messages
+- Never add Claude attribution or "Generated with Claude" to pull request descriptions
