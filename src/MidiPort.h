@@ -5,6 +5,7 @@
  * - Thread-safe message queuing for incoming messages
  * - SysEx fragment buffering (handles split messages)
  * - Simple send API for outgoing messages
+ * - Callback support for native routing
  */
 
 #pragma once
@@ -12,6 +13,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -19,11 +21,23 @@
 #include <string>
 #include <vector>
 
+// Callback type for message routing
+using MidiMessageCallback = std::function<void(const std::string& portId,
+                                               const std::vector<uint8_t>& data)>;
+
 class MidiPort : public juce::MidiInputCallback
 {
 public:
     MidiPort(const std::string& id, const std::string& name, bool isInput)
         : portId(id), portName(name), isInputPort(isInput) {}
+
+    // Set callback for incoming messages (for routing)
+    void setMessageCallback(MidiMessageCallback callback) {
+        std::lock_guard<std::mutex> lock(callbackMutex);
+        messageCallback = std::move(callback);
+    }
+
+    const std::string& getPortId() const { return portId; }
 
     ~MidiPort() override { close(); }
 
@@ -110,52 +124,72 @@ public:
         auto rawData = message.getRawData();
         auto size = message.getRawDataSize();
 
-        std::lock_guard<std::mutex> lock(queueMutex);
+        std::vector<uint8_t> completedMessage;  // For routing callback
 
-        // Check if this is a SysEx fragment
-        bool startsWithF0 = (size > 0 && rawData[0] == 0xF0);
-        bool endsWithF7 = (size > 0 && rawData[size - 1] == 0xF7);
-        bool isSysExRelated = message.isSysEx() || startsWithF0 ||
-                              (sysexBuffering && size > 0);
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
 
-        if (isSysExRelated) {
-            // Handle SysEx message or fragment
-            if (startsWithF0) {
-                // Start of new SysEx - initialize buffer
-                sysexBuffer.clear();
-                sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
-                sysexBuffering = true;
+            // Check if this is a SysEx fragment
+            bool startsWithF0 = (size > 0 && rawData[0] == 0xF0);
+            bool endsWithF7 = (size > 0 && rawData[size - 1] == 0xF7);
+            bool isSysExRelated = message.isSysEx() || startsWithF0 ||
+                                  (sysexBuffering && size > 0);
 
-                // Check if it's a complete SysEx in one message
-                if (endsWithF7) {
-                    messageQueue.push(sysexBuffer);
+            if (isSysExRelated) {
+                // Handle SysEx message or fragment
+                if (startsWithF0) {
+                    // Start of new SysEx - initialize buffer
                     sysexBuffer.clear();
-                    sysexBuffering = false;
-                }
-            } else if (sysexBuffering) {
-                // Continuation or end of SysEx
-                sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
+                    sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
+                    sysexBuffering = true;
 
-                if (endsWithF7) {
-                    // Complete SysEx received
-                    messageQueue.push(sysexBuffer);
-                    sysexBuffer.clear();
-                    sysexBuffering = false;
+                    // Check if it's a complete SysEx in one message
+                    if (endsWithF7) {
+                        messageQueue.push(sysexBuffer);
+                        completedMessage = sysexBuffer;
+                        sysexBuffer.clear();
+                        sysexBuffering = false;
+                    }
+                } else if (sysexBuffering) {
+                    // Continuation or end of SysEx
+                    sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
+
+                    if (endsWithF7) {
+                        // Complete SysEx received
+                        messageQueue.push(sysexBuffer);
+                        completedMessage = sysexBuffer;
+                        sysexBuffer.clear();
+                        sysexBuffering = false;
+                    }
+                    // Otherwise keep buffering
+                } else if (message.isSysEx()) {
+                    // JUCE already assembled complete SysEx
+                    auto sysexData = message.getSysExData();
+                    auto sysexSize = message.getSysExDataSize();
+                    data.push_back(0xF0);
+                    data.insert(data.end(), sysexData, sysexData + sysexSize);
+                    data.push_back(0xF7);
+                    messageQueue.push(data);
+                    completedMessage = data;
                 }
-                // Otherwise keep buffering
-            } else if (message.isSysEx()) {
-                // JUCE already assembled complete SysEx
-                auto sysexData = message.getSysExData();
-                auto sysexSize = message.getSysExDataSize();
-                data.push_back(0xF0);
-                data.insert(data.end(), sysexData, sysexData + sysexSize);
-                data.push_back(0xF7);
+            } else {
+                // Regular MIDI message (non-SysEx)
+                data.insert(data.end(), rawData, rawData + size);
                 messageQueue.push(data);
+                completedMessage = data;
             }
-        } else {
-            // Regular MIDI message (non-SysEx)
-            data.insert(data.end(), rawData, rawData + size);
-            messageQueue.push(data);
+        }
+
+        // Call routing callback if set (outside queue lock to avoid deadlock)
+        if (!completedMessage.empty()) {
+            MidiMessageCallback callback;
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                callback = messageCallback;
+            }
+            if (callback) {
+                callback(portId, completedMessage);
+            }
         }
     }
 
@@ -171,4 +205,8 @@ private:
     // SysEx buffering for fragmented messages
     std::vector<uint8_t> sysexBuffer;
     bool sysexBuffering = false;
+
+    // Callback for routing
+    MidiMessageCallback messageCallback;
+    std::mutex callbackMutex;
 };

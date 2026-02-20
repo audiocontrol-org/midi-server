@@ -1,23 +1,18 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { DiscoveryService } from './discovery'
-import type { RoutesStorage, Route, RouteEndpoint } from './routes-storage'
 import type { VirtualPortsStorage } from './virtual-ports-storage'
-import type { RoutingEngine } from './routing-engine'
 import { getMidiClient } from './client-factory'
 import { getLocalClient } from './local-client'
 
 interface RoutingServices {
   discovery: DiscoveryService
-  routes: RoutesStorage
   virtualPorts: VirtualPortsStorage
-  routingEngine: RoutingEngine
   localServerUrl: string
   localMidiServerPort: number
 }
 
 export function createRoutingHandlers(services: RoutingServices) {
-  const { discovery, routes, virtualPorts, routingEngine, localServerUrl, localMidiServerPort } =
-    services
+  const { discovery, virtualPorts, localServerUrl, localMidiServerPort } = services
 
   function sendJson(res: ServerResponse, data: unknown, status = 200): void {
     res.statusCode = status
@@ -75,45 +70,50 @@ export function createRoutingHandlers(services: RoutingServices) {
     sendJson(res, { success: true, serverName: body.name })
   }
 
-  // Route endpoints
-  function handleGetRoutes(res: ServerResponse): void {
-    const allRoutes = routes.getAll()
-    const statuses = routingEngine.getRouteStatuses()
-    const statusMap = new Map(statuses.map((s) => [s.routeId, s]))
-
-    const routesWithStatus = allRoutes.map((route) => ({
-      ...route,
-      status: statusMap.get(route.id) ?? {
-        routeId: route.id,
-        status: route.enabled ? 'active' : 'disabled',
-        messagesRouted: 0,
-        lastMessageTime: null
-      }
-    }))
-
-    sendJson(res, { routes: routesWithStatus })
+  // Route endpoints - proxy to C++ native routing
+  async function handleGetRoutes(res: ServerResponse): Promise<void> {
+    try {
+      const client = getLocalClient(localMidiServerPort)
+      const result = await client.getRoutes()
+      sendJson(res, result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to get routes: ${message}`, 502)
+    }
   }
 
   async function handleCreateRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await readJsonBody<{
-      enabled: boolean
-      source: RouteEndpoint
-      destination: RouteEndpoint
+      enabled?: boolean
+      source: {
+        serverUrl: string
+        portId: string
+        portName: string
+      }
+      destination: {
+        serverUrl: string
+        portId: string
+        portName: string
+      }
     }>(req)
 
-    if (!body?.source || !body?.destination) {
-      sendError(res, 'Missing source or destination')
+    if (!body?.source?.portId || !body?.destination?.portId) {
+      sendError(res, 'Missing source.portId or destination.portId')
       return
     }
 
-    const route = routes.create({
-      enabled: body.enabled ?? true,
-      source: body.source,
-      destination: body.destination
-    })
-
-    routingEngine.onRoutesChanged()
-    sendJson(res, { route }, 201)
+    try {
+      const client = getLocalClient(localMidiServerPort)
+      const result = await client.createRoute({
+        enabled: body.enabled ?? true,
+        source: body.source,
+        destination: body.destination
+      })
+      sendJson(res, result, 201)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to create route: ${message}`, 502)
+    }
   }
 
   async function handleUpdateRoute(
@@ -121,31 +121,39 @@ export function createRoutingHandlers(services: RoutingServices) {
     res: ServerResponse,
     routeId: string
   ): Promise<void> {
-    const body = await readJsonBody<Partial<Omit<Route, 'id'>>>(req)
-    if (!body) {
-      sendError(res, 'Invalid request body')
+    const body = await readJsonBody<{ enabled?: boolean }>(req)
+    if (body?.enabled === undefined) {
+      sendError(res, 'Missing enabled field')
       return
     }
 
-    const updated = routes.update(routeId, body)
-    if (!updated) {
-      sendError(res, 'Route not found', 404)
-      return
+    try {
+      const client = getLocalClient(localMidiServerPort)
+      const result = await client.updateRoute(routeId, body.enabled)
+      sendJson(res, result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('not found')) {
+        sendError(res, 'Route not found', 404)
+      } else {
+        sendError(res, `Failed to update route: ${message}`, 502)
+      }
     }
-
-    routingEngine.onRoutesChanged()
-    sendJson(res, { route: updated })
   }
 
-  function handleDeleteRoute(res: ServerResponse, routeId: string): void {
-    const deleted = routes.delete(routeId)
-    if (!deleted) {
-      sendError(res, 'Route not found', 404)
-      return
+  async function handleDeleteRoute(res: ServerResponse, routeId: string): Promise<void> {
+    try {
+      const client = getLocalClient(localMidiServerPort)
+      const result = await client.deleteRoute(routeId)
+      sendJson(res, result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('not found')) {
+        sendError(res, 'Route not found', 404)
+      } else {
+        sendError(res, `Failed to delete route: ${message}`, 502)
+      }
     }
-
-    routingEngine.onRoutesChanged()
-    sendJson(res, { success: true })
   }
 
   // Remote server proxy endpoints

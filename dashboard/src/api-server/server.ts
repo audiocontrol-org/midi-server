@@ -6,9 +6,7 @@ import { ProcessManager } from './process-manager'
 import { LogBuffer } from './log-buffer'
 import { proxyToMidiServer } from './midi-proxy'
 import { DiscoveryService } from './discovery'
-import { RoutesStorage } from './routes-storage'
 import { VirtualPortsStorage } from './virtual-ports-storage'
-import { RoutingEngine } from './routing-engine'
 import { createRoutingHandlers, type RoutingHandlers } from './routing-handlers'
 import { UpdateHandlers } from './update-handlers'
 import { getLocalClient } from './local-client'
@@ -23,9 +21,7 @@ export class ApiServer {
 
   // Routing services
   private discovery: DiscoveryService | null = null
-  private routesStorage: RoutesStorage | null = null
   private virtualPortsStorage: VirtualPortsStorage | null = null
-  private routingEngine: RoutingEngine | null = null
   private routingHandlers: RoutingHandlers | null = null
   private updateHandlers: UpdateHandlers
 
@@ -91,16 +87,12 @@ export class ApiServer {
   }
 
   private initializeRoutingServices(localUrl: string): void {
-    this.routesStorage = new RoutesStorage()
     this.virtualPortsStorage = new VirtualPortsStorage()
     this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
-    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort, this.logBuffer)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
-      routes: this.routesStorage,
       virtualPorts: this.virtualPortsStorage,
-      routingEngine: this.routingEngine,
       localServerUrl: localUrl,
       localMidiServerPort: this.config.midiServerPort
     })
@@ -108,11 +100,10 @@ export class ApiServer {
     // Recreate persisted virtual ports in C++ binary
     this.recreateVirtualPorts()
 
-    // Start services
+    // Start discovery service (routing is now native in C++)
     this.discovery.start()
-    this.routingEngine.start()
 
-    console.log('[ApiServer] Routing services initialized')
+    console.log('[ApiServer] Services initialized (routing is native in C++)')
   }
 
   private async recreateVirtualPorts(): Promise<void> {
@@ -139,10 +130,7 @@ export class ApiServer {
   async stop(): Promise<void> {
     this.updateHandlers.dispose()
 
-    // Stop routing services
-    if (this.routingEngine) {
-      this.routingEngine.stop()
-    }
+    // Stop discovery service (routing is native in C++)
     if (this.discovery) {
       this.discovery.stop()
     }

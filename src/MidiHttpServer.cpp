@@ -15,6 +15,7 @@
 #include "JsonBuilder.h"
 #include "MidiPort.h"
 #include "VirtualMidiPort.h"
+#include "RouteManager.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -31,10 +32,44 @@
 class MidiHttpServer
 {
 public:
-    explicit MidiHttpServer(int port) : serverPort(port) {}
+    explicit MidiHttpServer(int port) : serverPort(port), routeManager() {
+        // Set up local message forwarder for RouteManager
+        routeManager.setLocalMessageForwarder([this](const std::string& destPortId,
+                                                      const std::vector<uint8_t>& data) {
+            forwardToLocalDestination(destPortId, data);
+        });
+    }
 
     ~MidiHttpServer() {
         stopServer();
+    }
+
+    // Forward a message to a local destination port (used by RouteManager for local routes)
+    void forwardToLocalDestination(const std::string& destPortId,
+                                    const std::vector<uint8_t>& data) {
+        std::lock_guard<std::mutex> lock(portsMutex);
+
+        // Check if it's a virtual port
+        if (destPortId.rfind("virtual:", 0) == 0) {
+            std::string virtualId = destPortId.substr(8);
+            auto it = virtualPorts.find(virtualId);
+            if (it != virtualPorts.end()) {
+                it->second->sendMessage(data);
+            } else {
+                std::cerr << "[RouteManager] Virtual destination not found: "
+                          << virtualId << std::endl;
+            }
+            return;
+        }
+
+        // Check physical ports
+        auto it = ports.find(destPortId);
+        if (it != ports.end()) {
+            it->second->sendMessage(data);
+        } else {
+            std::cerr << "[RouteManager] Destination port not found: "
+                      << destPortId << std::endl;
+        }
     }
 
     void startServer() {
@@ -43,7 +78,7 @@ public:
         // Add CORS headers to all responses
         server->set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
             res.set_header("Access-Control-Allow-Origin", "*");
-            res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers", "Content-Type");
         });
 
@@ -106,6 +141,15 @@ public:
 
                 bool isInput = (type == "input");
                 auto port = std::make_unique<MidiPort>(portId, name, isInput);
+
+                // Set up routing callback for input ports
+                if (isInput) {
+                    port->setMessageCallback([this](const std::string& srcPortId,
+                                                    const std::vector<uint8_t>& data) {
+                        routeManager.forwardMessage(srcPortId, data);
+                    });
+                }
+
                 bool success = port->open();
 
                 if (success) {
@@ -294,7 +338,17 @@ public:
                 }
 
                 bool isInput = (type == "input");
-                auto port = std::make_unique<VirtualMidiPort>(name, isInput);
+                std::string fullPortId = "virtual:" + portId;
+                auto port = std::make_unique<VirtualMidiPort>(fullPortId, name, isInput);
+
+                // Set up routing callback for input ports
+                if (isInput) {
+                    port->setMessageCallback([this](const std::string& srcPortId,
+                                                    const std::vector<uint8_t>& data) {
+                        routeManager.forwardMessage(srcPortId, data);
+                    });
+                }
+
                 bool success = port->open();
 
                 if (success) {
@@ -488,6 +542,186 @@ public:
             }
         });
 
+        //==============================================================================
+        // Route management endpoints
+        //==============================================================================
+
+        // GET /routes - List all routes
+        server->Get("/routes", [this](const httplib::Request&, httplib::Response& res) {
+            auto routes = routeManager.getAllRoutes();
+
+            JsonBuilder json;
+            json.startObject().key("routes").startArray();
+
+            for (const auto& route : routes) {
+                json.startObject()
+                    .key("id").value(route.id)
+                    .key("enabled").value(route.enabled)
+                    .key("source").startObject()
+                        .key("serverUrl").value(route.source.serverUrl)
+                        .key("portId").value(route.source.portId)
+                        .key("portName").value(route.source.portName)
+                    .endObject()
+                    .key("destination").startObject()
+                        .key("serverUrl").value(route.destination.serverUrl)
+                        .key("portId").value(route.destination.portId)
+                        .key("portName").value(route.destination.portName)
+                    .endObject()
+                    .key("status").startObject()
+                        .key("routeId").value(route.id)
+                        .key("status").value(route.enabled ? std::string("active") : std::string("disabled"))
+                        .key("messagesRouted").value((int)route.messagesForwarded)
+                    .endObject()
+                .endObject();
+            }
+
+            json.endArray().endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
+        // POST /routes - Create a new route
+        server->Post("/routes", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Parse JSON body - expecting source and destination endpoint objects
+                RouteEndpoint source, destination;
+                bool enabled = true;
+
+                // Parse source endpoint
+                size_t sourceStart = req.body.find("\"source\"");
+                if (sourceStart != std::string::npos) {
+                    source.serverUrl = extractNestedJsonString(req.body, sourceStart, "serverUrl");
+                    source.portId = extractNestedJsonString(req.body, sourceStart, "portId");
+                    source.portName = extractNestedJsonString(req.body, sourceStart, "portName");
+                }
+
+                // Parse destination endpoint
+                size_t destStart = req.body.find("\"destination\"");
+                if (destStart != std::string::npos) {
+                    destination.serverUrl = extractNestedJsonString(req.body, destStart, "serverUrl");
+                    destination.portId = extractNestedJsonString(req.body, destStart, "portId");
+                    destination.portName = extractNestedJsonString(req.body, destStart, "portName");
+                }
+
+                // Parse enabled (optional, defaults to true)
+                size_t enabledPos = req.body.find("\"enabled\":");
+                if (enabledPos != std::string::npos) {
+                    enabledPos += 10;
+                    while (enabledPos < req.body.length() &&
+                           (req.body[enabledPos] == ' ' || req.body[enabledPos] == '\t')) {
+                        enabledPos++;
+                    }
+                    enabled = (req.body.substr(enabledPos, 4) == "true");
+                }
+
+                if (source.portId.empty() || destination.portId.empty()) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Missing source.portId or destination.portId"))
+                        .endObject();
+                    res.status = 400;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                std::string routeId = routeManager.addRoute(source, destination, enabled);
+
+                JsonBuilder json;
+                json.startObject()
+                    .key("route").startObject()
+                        .key("id").value(routeId)
+                        .key("enabled").value(enabled)
+                        .key("source").startObject()
+                            .key("serverUrl").value(source.serverUrl)
+                            .key("portId").value(source.portId)
+                            .key("portName").value(source.portName)
+                        .endObject()
+                        .key("destination").startObject()
+                            .key("serverUrl").value(destination.serverUrl)
+                            .key("portId").value(destination.portId)
+                            .key("portName").value(destination.portName)
+                        .endObject()
+                    .endObject()
+                .endObject();
+                res.status = 201;
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
+        // PUT /routes/:routeId - Update a route (enable/disable)
+        server->Put("/routes/:routeId", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string routeId = req.path_params.at("routeId");
+
+            try {
+                // Parse enabled field
+                size_t enabledPos = req.body.find("\"enabled\":");
+                if (enabledPos == std::string::npos) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Missing enabled field"))
+                        .endObject();
+                    res.status = 400;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                enabledPos += 10;
+                while (enabledPos < req.body.length() &&
+                       (req.body[enabledPos] == ' ' || req.body[enabledPos] == '\t')) {
+                    enabledPos++;
+                }
+                bool enabled = (req.body.substr(enabledPos, 4) == "true");
+
+                bool success = routeManager.setRouteEnabled(routeId, enabled);
+                if (!success) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Route not found"))
+                        .endObject();
+                    res.status = 404;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                JsonBuilder json;
+                json.startObject()
+                    .key("success").value(true)
+                    .key("routeId").value(routeId)
+                    .key("enabled").value(enabled)
+                    .endObject();
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
+        // DELETE /routes/:routeId - Delete a route
+        server->Delete("/routes/:routeId", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string routeId = req.path_params.at("routeId");
+
+            bool success = routeManager.removeRoute(routeId);
+            if (!success) {
+                JsonBuilder json;
+                json.startObject()
+                    .key("error").value(std::string("Route not found"))
+                    .endObject();
+                res.status = 404;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            JsonBuilder json;
+            json.startObject().key("success").value(true).endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
         // Start server in a separate thread
         serverThread = std::thread([this]() {
             if (serverPort == 0) {
@@ -526,6 +760,45 @@ private:
     std::map<std::string, std::unique_ptr<MidiPort>> ports;
     std::map<std::string, std::unique_ptr<VirtualMidiPort>> virtualPorts;
     std::mutex portsMutex;
+    RouteManager routeManager;
+
+    // Helper to extract a string value from a nested JSON object
+    static std::string extractNestedJsonString(const std::string& json,
+                                                size_t objectStart,
+                                                const std::string& key) {
+        // Find the opening brace after objectStart
+        size_t braceStart = json.find('{', objectStart);
+        if (braceStart == std::string::npos) return "";
+
+        // Find matching closing brace
+        int braceCount = 1;
+        size_t braceEnd = braceStart + 1;
+        while (braceEnd < json.length() && braceCount > 0) {
+            if (json[braceEnd] == '{') braceCount++;
+            else if (json[braceEnd] == '}') braceCount--;
+            braceEnd++;
+        }
+        if (braceCount != 0) return "";
+
+        std::string objStr = json.substr(braceStart, braceEnd - braceStart);
+
+        // Find the key within this object
+        std::string searchKey = "\"" + key + "\":";
+        size_t keyPos = objStr.find(searchKey);
+        if (keyPos == std::string::npos) {
+            searchKey = "\"" + key + "\": ";
+            keyPos = objStr.find(searchKey);
+            if (keyPos == std::string::npos) return "";
+        }
+
+        size_t valueStart = objStr.find('"', keyPos + searchKey.length());
+        if (valueStart == std::string::npos) return "";
+
+        size_t valueEnd = objStr.find('"', valueStart + 1);
+        if (valueEnd == std::string::npos) return "";
+
+        return objStr.substr(valueStart + 1, valueEnd - valueStart - 1);
+    }
 };
 
 //==============================================================================

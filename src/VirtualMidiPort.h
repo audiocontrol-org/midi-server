@@ -23,11 +23,27 @@
 #include <string>
 #include <vector>
 
+// Callback type for message routing
+using VirtualMidiMessageCallback = std::function<void(const std::string& portId,
+                                                      const std::vector<uint8_t>& data)>;
+
 class VirtualMidiPort : public juce::MidiInputCallback
 {
 public:
+    VirtualMidiPort(const std::string& id, const std::string& name, bool isInput)
+        : portId(id), portName(name), isInputPort(isInput) {}
+
+    // Legacy constructor for backward compatibility
     VirtualMidiPort(const std::string& name, bool isInput)
-        : portName(name), isInputPort(isInput) {}
+        : portId("virtual:" + name), portName(name), isInputPort(isInput) {}
+
+    // Set callback for incoming messages (for routing)
+    void setMessageCallback(VirtualMidiMessageCallback callback) {
+        std::lock_guard<std::mutex> lock(callbackMutex);
+        messageCallback = std::move(callback);
+    }
+
+    const std::string& getPortId() const { return portId; }
 
     ~VirtualMidiPort() override { close(); }
 
@@ -129,45 +145,66 @@ public:
         auto rawData = message.getRawData();
         auto size = message.getRawDataSize();
 
-        std::lock_guard<std::mutex> lock(queueMutex);
+        std::vector<uint8_t> completedMessage;  // For routing callback
 
-        // Handle SysEx
-        bool startsWithF0 = (size > 0 && rawData[0] == 0xF0);
-        bool endsWithF7 = (size > 0 && rawData[size - 1] == 0xF7);
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
 
-        if (message.isSysEx() || startsWithF0) {
-            if (startsWithF0) {
-                sysexBuffer.clear();
-                sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
-                sysexBuffering = true;
+            // Handle SysEx
+            bool startsWithF0 = (size > 0 && rawData[0] == 0xF0);
+            bool endsWithF7 = (size > 0 && rawData[size - 1] == 0xF7);
 
-                if (endsWithF7) {
-                    messageQueue.push(sysexBuffer);
+            if (message.isSysEx() || startsWithF0) {
+                if (startsWithF0) {
                     sysexBuffer.clear();
-                    sysexBuffering = false;
+                    sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
+                    sysexBuffering = true;
+
+                    if (endsWithF7) {
+                        messageQueue.push(sysexBuffer);
+                        completedMessage = sysexBuffer;
+                        sysexBuffer.clear();
+                        sysexBuffering = false;
+                    }
+                } else if (sysexBuffering) {
+                    sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
+                    if (endsWithF7) {
+                        messageQueue.push(sysexBuffer);
+                        completedMessage = sysexBuffer;
+                        sysexBuffer.clear();
+                        sysexBuffering = false;
+                    }
+                } else if (message.isSysEx()) {
+                    auto sysexData = message.getSysExData();
+                    auto sysexSize = message.getSysExDataSize();
+                    data.push_back(0xF0);
+                    data.insert(data.end(), sysexData, sysexData + sysexSize);
+                    data.push_back(0xF7);
+                    messageQueue.push(data);
+                    completedMessage = data;
                 }
-            } else if (sysexBuffering) {
-                sysexBuffer.insert(sysexBuffer.end(), rawData, rawData + size);
-                if (endsWithF7) {
-                    messageQueue.push(sysexBuffer);
-                    sysexBuffer.clear();
-                    sysexBuffering = false;
-                }
-            } else if (message.isSysEx()) {
-                auto sysexData = message.getSysExData();
-                auto sysexSize = message.getSysExDataSize();
-                data.push_back(0xF0);
-                data.insert(data.end(), sysexData, sysexData + sysexSize);
-                data.push_back(0xF7);
+            } else {
+                data.insert(data.end(), rawData, rawData + size);
                 messageQueue.push(data);
+                completedMessage = data;
             }
-        } else {
-            data.insert(data.end(), rawData, rawData + size);
-            messageQueue.push(data);
+        }
+
+        // Call routing callback if set (outside queue lock to avoid deadlock)
+        if (!completedMessage.empty()) {
+            VirtualMidiMessageCallback callback;
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex);
+                callback = messageCallback;
+            }
+            if (callback) {
+                callback(portId, completedMessage);
+            }
         }
     }
 
 private:
+    std::string portId;
     std::string portName;
     bool isInputPort;
     std::unique_ptr<juce::MidiInput> virtualInput;
@@ -178,4 +215,8 @@ private:
     // SysEx buffering
     std::vector<uint8_t> sysexBuffer;
     bool sysexBuffering = false;
+
+    // Callback for routing
+    VirtualMidiMessageCallback messageCallback;
+    std::mutex callbackMutex;
 };
