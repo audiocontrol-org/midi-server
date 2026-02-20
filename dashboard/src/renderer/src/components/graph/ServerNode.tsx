@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { NodeResizer } from '@xyflow/react'
 import type { NodeProps, Node } from '@xyflow/react'
 import type { ServerNodeData } from '@/hooks/useRouteGraph'
@@ -23,6 +23,7 @@ function arePropsEqual(
 }
 
 function ServerNodeComponent({ data, selected }: NodeProps<ServerNode>): React.JSX.Element {
+  const [isHovered, setIsHovered] = useState(false)
   const statusColors = {
     connected: 'bg-green-500',
     disconnected: 'bg-red-500',
@@ -41,14 +42,23 @@ function ServerNodeComponent({ data, selected }: NodeProps<ServerNode>): React.J
     checking: '#eab308'
   }
 
+  const showResizer = isHovered || selected
+
   return (
     <>
+      {/* Invisible hover zone extending beyond the node */}
+      <div
+        className="absolute"
+        style={{ inset: -10, zIndex: -1 }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      />
       <NodeResizer
-        isVisible={selected}
+        isVisible={showResizer}
         minWidth={180}
         minHeight={100}
         lineClassName="!border-gray-500"
-        handleClassName="!w-2 !h-2 !bg-gray-400 !border-gray-600"
+        handleClassName="!w-2.5 !h-2.5 !bg-gray-300 !border-gray-500 !rounded-sm"
         color={resizerColors[data.connectionStatus]}
       />
       <div
@@ -56,6 +66,8 @@ function ServerNodeComponent({ data, selected }: NodeProps<ServerNode>): React.J
           w-full h-full rounded-lg border-2 ${borderColors[data.connectionStatus]}
           bg-gray-800/60 backdrop-blur-sm
         `}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         {/* Server header */}
         <div className="px-3 py-2 border-b border-gray-700/50 bg-gray-700/40 rounded-t-md">
