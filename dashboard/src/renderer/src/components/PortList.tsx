@@ -54,8 +54,12 @@ export function PortList({
                   className={`w-2 h-2 rounded-full ${isOpen ? 'bg-green-400' : 'bg-gray-500'}`}
                 />
                 <span className="font-mono text-sm text-gray-400">[{port.id}]</span>
-                <span className="flex-1 truncate">{port.name}</span>
-                {isOpen && <span className="text-xs bg-green-800 px-1.5 py-0.5 rounded">Open</span>}
+                <span className="flex-1 truncate" title={port.name}>{port.name}</span>
+                <span
+                  className={`text-xs px-1.5 py-0.5 rounded ${isOpen ? 'bg-green-800' : 'invisible'}`}
+                >
+                  Open
+                </span>
               </button>
             </li>
           )

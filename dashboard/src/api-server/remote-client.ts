@@ -46,6 +46,12 @@ export class RemoteClient implements MidiClient {
   private defaultTimeout: number
 
   constructor(serverUrl: string, timeout = 5000) {
+    // Validate URL format
+    try {
+      new URL(serverUrl)
+    } catch {
+      throw new Error(`Invalid server URL: ${serverUrl}`)
+    }
     // Ensure URL ends without trailing slash
     this.baseUrl = serverUrl.replace(/\/$/, '')
     this.defaultTimeout = timeout
@@ -139,7 +145,11 @@ export class RemoteClient implements MidiClient {
     }
   }
 
-  async openPort(portId: string, name: string, type: 'input' | 'output'): Promise<{ success: boolean }> {
+  async openPort(
+    portId: string,
+    name: string,
+    type: 'input' | 'output'
+  ): Promise<{ success: boolean }> {
     const index = extractPortIndex(portId)
     return this.request<{ success: boolean }>(`/midi/port/${index}`, {
       method: 'POST',

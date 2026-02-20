@@ -16,3 +16,72 @@ body {
 #root {
   @apply min-h-screen;
 }
+
+/* React Flow dark theme overrides */
+.react-flow__background {
+  background-color: #1f2937;
+}
+
+.react-flow__minimap {
+  background-color: #374151;
+}
+
+.react-flow__controls button {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #d1d5db;
+}
+
+.react-flow__controls button:hover {
+  background-color: #4b5563;
+}
+
+.react-flow__controls button svg {
+  fill: currentColor;
+}
+
+/* Edge flow animation for MIDI messages */
+@keyframes midi-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.midi-edge-animated path {
+  stroke-dasharray: 6, 3;
+  animation: midi-flow 0.5s linear infinite;
+}
+
+/* Handle styling */
+.react-flow__handle {
+  background-color: #6b7280;
+  border-color: #9ca3af;
+}
+
+.react-flow__handle.connecting {
+  background-color: #3b82f6;
+}
+
+.react-flow__handle.valid {
+  background-color: #22c55e;
+}
+
+/* Connection line */
+.react-flow__connection-line {
+  stroke: #3b82f6;
+  stroke-width: 2;
+}
+
+/* Selected edge */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 3;
+}
+
+/* Panel styling */
+.react-flow__panel {
+  background-color: #374151;
+  border-color: #4b5563;
+}

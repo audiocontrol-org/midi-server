@@ -22,6 +22,9 @@ export class LocalClient implements MidiClient {
   private defaultTimeout: number
 
   constructor(midiServerPort: number, timeout = 5000) {
+    if (!midiServerPort || isNaN(midiServerPort) || midiServerPort < 0) {
+      throw new Error(`Invalid MIDI server port: ${midiServerPort}`)
+    }
     this.baseUrl = `http://localhost:${midiServerPort}`
     this.defaultTimeout = timeout
   }

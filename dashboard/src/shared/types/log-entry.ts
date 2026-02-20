@@ -5,7 +5,7 @@ export interface LogEntry {
   timestamp: number
   severity: LogSeverity
   message: string
-  source: 'server' | 'dashboard' | 'system'
+  source: 'server' | 'dashboard' | 'system' | 'routing'
 }
 
 export interface BuildInfo {

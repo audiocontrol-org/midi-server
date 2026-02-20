@@ -94,7 +94,10 @@ export function RoutingPanel({
                       {getServerName(route.destination.serverUrl)}
                     </span>
                     <span className="text-gray-500">:</span>
-                    <span className="text-white text-sm truncate" title={route.destination.portName}>
+                    <span
+                      className="text-white text-sm truncate"
+                      title={route.destination.portName}
+                    >
                       {route.destination.portName}
                     </span>
                   </div>

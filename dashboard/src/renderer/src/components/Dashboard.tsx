@@ -2,17 +2,17 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useServerConnection } from '@/hooks/useServerConnection'
 import { usePlatform } from '@/hooks/usePlatform'
 import { useUpdateStatus } from '@/hooks/useUpdateStatus'
-import { ServerControl } from '@/components/ServerControl'
-import { RemoteServerControl } from '@/components/RemoteServerControl'
 import { PortList, generatePortId } from '@/components/PortList'
 import { PortDetail } from '@/components/PortDetail'
 import { UpdateSettingsButton } from '@/components/UpdateSettingsButton'
 import { UpdateSettingsModal } from '@/components/UpdateSettingsModal'
 import { BuildInfoButton } from '@/components/BuildInfoButton'
 import { BuildInfoModal } from '@/components/BuildInfoModal'
-import { ServerTabs } from '@/components/ServerTabs'
 import { RoutingPanel } from '@/components/RoutingPanel'
+import { RouteGraph } from '@/components/RouteGraph'
 import { AddRouteModal } from '@/components/AddRouteModal'
+import { AppShell, PageHeader, ServerStatus, ServerActions, type TabId } from '@/components/layout'
+import '@/styles/layout.css'
 import {
   createClient,
   createApiClient,
@@ -20,7 +20,7 @@ import {
   type Route,
   type RouteEndpoint
 } from '@/api/client'
-import type { MidiPort, MidiMessage, OpenPort, PortsResponse } from '@/types/api'
+import type { MidiPort, MidiMessage, OpenPort } from '@/types/api'
 import type { ServerProcess, BuildInfo } from '@/platform'
 
 const DISCOVERY_POLL_INTERVAL = 5000
@@ -29,12 +29,16 @@ const SERVER_STATUS_CHECK_INTERVAL = 10000
 export function Dashboard(): React.JSX.Element {
   const platform = usePlatform()
   const update = useUpdateStatus()
-  const { status, ports, connect, disconnect, refresh } = useServerConnection({ autoConnect: false })
+  const { status, ports, connect, disconnect, refresh } = useServerConnection({
+    autoConnect: false
+  })
   const [serverProcess, setServerProcess] = useState<ServerProcess | null>(null)
-  const [serverError, setServerError] = useState<string | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
+
+  // Active tab state
+  const [activeTab, setActiveTab] = useState<TabId>('ports')
 
   // Open ports state
   const [openPorts, setOpenPorts] = useState<Map<string, OpenPort>>(new Map())
@@ -44,10 +48,10 @@ export function Dashboard(): React.JSX.Element {
 
   // Multi-server state
   const [discoveredServers, setDiscoveredServers] = useState<DiscoveredServer[]>([])
-  const [selectedServerUrl, setSelectedServerUrl] = useState<string | null>(null)
   const [localServerUrl, setLocalServerUrl] = useState<string | null>(null)
-  const [serverStatuses, setServerStatuses] = useState<Map<string, 'connected' | 'disconnected' | 'checking'>>(new Map())
-  const [remotePorts, setRemotePorts] = useState<PortsResponse | null>(null)
+  const [serverStatuses, setServerStatuses] = useState<
+    Map<string, 'connected' | 'disconnected' | 'checking'>
+  >(new Map())
 
   // Routing state
   const [routes, setRoutes] = useState<Route[]>([])
@@ -65,13 +69,9 @@ export function Dashboard(): React.JSX.Element {
         const response = await apiClientRef.current.getDiscoveredServers()
         setDiscoveredServers(response.servers)
 
-        // Set local server URL if not already set
         const localServer = response.servers.find((s) => s.isLocal)
         if (localServer && !localServerUrl) {
           setLocalServerUrl(localServer.apiUrl)
-          if (!selectedServerUrl) {
-            setSelectedServerUrl(localServer.apiUrl)
-          }
         }
       } catch (err) {
         console.error('Failed to fetch discovered servers:', err)
@@ -81,7 +81,7 @@ export function Dashboard(): React.JSX.Element {
     fetchServers()
     const interval = setInterval(fetchServers, DISCOVERY_POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [localServerUrl, selectedServerUrl])
+  }, [localServerUrl])
 
   // Check health of all discovered servers
   useEffect(() => {
@@ -108,14 +108,12 @@ export function Dashboard(): React.JSX.Element {
       }
     }
 
-    // Check health for all servers
     for (const server of discoveredServers) {
       if (!server.isLocal) {
         checkServerHealth(server.apiUrl)
       }
     }
 
-    // Mark local server as connected if connected
     if (localServerUrl) {
       setServerStatuses((prev) => {
         const next = new Map(prev)
@@ -124,7 +122,6 @@ export function Dashboard(): React.JSX.Element {
       })
     }
 
-    // Periodically recheck remote servers
     const interval = setInterval(() => {
       for (const server of discoveredServers) {
         if (!server.isLocal) {
@@ -148,29 +145,9 @@ export function Dashboard(): React.JSX.Element {
     }
 
     fetchRoutes()
-    const interval = setInterval(fetchRoutes, 5000) // Poll for route status updates
+    const interval = setInterval(fetchRoutes, 5000)
     return () => clearInterval(interval)
   }, [])
-
-  // Fetch ports from selected server (local or remote)
-  useEffect(() => {
-    const fetchRemotePorts = async (): Promise<void> => {
-      if (!selectedServerUrl || selectedServerUrl === localServerUrl) {
-        setRemotePorts(null)
-        return
-      }
-
-      try {
-        const ports = await apiClientRef.current.getRemoteServerPorts(selectedServerUrl)
-        setRemotePorts(ports)
-      } catch (err) {
-        console.error('Failed to fetch remote ports:', err)
-        setRemotePorts(null)
-      }
-    }
-
-    fetchRemotePorts()
-  }, [selectedServerUrl, localServerUrl])
 
   // Poll server process status
   useEffect(() => {
@@ -181,7 +158,6 @@ export function Dashboard(): React.JSX.Element {
         const processStatus = await platform.getServerStatus()
         setServerProcess(processStatus)
 
-        // Auto-connect when server starts
         if (processStatus.running && !status.connected) {
           connect()
         }
@@ -195,32 +171,25 @@ export function Dashboard(): React.JSX.Element {
     return () => clearInterval(interval)
   }, [platform, status.connected, connect])
 
-  const handleStartServer = useCallback(
-    async (port: number) => {
-      try {
-        const process = await platform.startServer(port)
-        setServerProcess(process)
-        setServerError(null)
-        connect()
-      } catch (err) {
-        console.error('Failed to start server:', err)
-        setServerError(err instanceof Error ? err.message : 'Failed to start server')
-      }
-    },
-    [platform, connect]
-  )
+  const handleStartServer = useCallback(async () => {
+    try {
+      const process = await platform.startServer()
+      setServerProcess(process)
+      connect()
+    } catch (err) {
+      console.error('Failed to start server:', err)
+    }
+  }, [platform, connect])
 
   const handleStopServer = useCallback(async () => {
     try {
       await platform.stopServer()
       setServerProcess({ running: false, pid: null, port: null, url: null })
-      setServerError(null)
       disconnect()
       setOpenPorts(new Map())
       setSelectedPortId(null)
     } catch (err) {
       console.error('Failed to stop server:', err)
-      setServerError(err instanceof Error ? err.message : 'Failed to stop server')
     }
   }, [platform, disconnect])
 
@@ -285,13 +254,6 @@ export function Dashboard(): React.JSX.Element {
     [selectedPortId]
   )
 
-  const handleSelectServer = useCallback((serverUrl: string) => {
-    setSelectedServerUrl(serverUrl)
-    // Clear selected port when switching servers
-    setSelectedPortId(null)
-    setOpenPorts(new Map())
-  }, [])
-
   const handleToggleRoute = useCallback(async (routeId: string, enabled: boolean) => {
     try {
       await apiClientRef.current.updateRoute(routeId, { enabled })
@@ -312,70 +274,202 @@ export function Dashboard(): React.JSX.Element {
     }
   }, [])
 
-  const handleAddRoute = useCallback(
-    async (source: RouteEndpoint, destination: RouteEndpoint) => {
-      try {
-        const response = await apiClientRef.current.createRoute({
-          enabled: true,
-          source,
-          destination
-        })
-        setRoutes((prev) => [...prev, response.route])
-        setIsAddRouteModalOpen(false)
-      } catch (err) {
-        console.error('Failed to create route:', err)
-      }
-    },
-    []
-  )
+  const handleAddRoute = useCallback(async (source: RouteEndpoint, destination: RouteEndpoint) => {
+    try {
+      const response = await apiClientRef.current.createRoute({
+        enabled: true,
+        source,
+        destination
+      })
+      setRoutes((prev) => [...prev, response.route])
+      setIsAddRouteModalOpen(false)
+    } catch (err) {
+      console.error('Failed to create route:', err)
+    }
+  }, [])
+
+  // Stable callback refs
+  const portsRef = useRef(ports)
+  const localServerUrlRef = useRef(localServerUrl)
+  portsRef.current = ports
+  localServerUrlRef.current = localServerUrl
 
   const fetchServerPorts = useCallback(
     async (serverUrl: string): Promise<{ inputs: MidiPort[]; outputs: MidiPort[] }> => {
-      if (serverUrl === 'local') {
-        return apiClientRef.current.getLocalPorts()
-      }
-      if (serverUrl === localServerUrl && ports) {
-        return ports
+      if (serverUrl === localServerUrlRef.current && portsRef.current) {
+        return portsRef.current
       }
       return apiClientRef.current.getRemoteServerPorts(serverUrl)
     },
-    [localServerUrl, ports]
-  )
-
-  // Remote server management callbacks
-  const getRemoteServerStatus = useCallback(
-    (serverUrl: string) => apiClientRef.current.getRemoteServerStatus(serverUrl),
-    []
-  )
-
-  const startRemoteServer = useCallback(
-    (serverUrl: string) => apiClientRef.current.startRemoteServer(serverUrl),
-    []
-  )
-
-  const stopRemoteServer = useCallback(
-    (serverUrl: string) => apiClientRef.current.stopRemoteServer(serverUrl),
     []
   )
 
   const selectedPort = selectedPortId ? openPorts.get(selectedPortId) : null
   const openPortIds = new Set(openPorts.keys())
-  const isViewingLocalServer = selectedServerUrl === localServerUrl
-  const displayPorts = isViewingLocalServer ? ports : remotePorts
   const hasUpdateAvailable =
     update.status?.phase === 'available' || update.status?.phase === 'downloaded'
+  const remoteServerCount = discoveredServers.filter((s) => !s.isLocal).length
+
+  // Header status content
+  const headerStatus = (
+    <>
+      <ServerStatus
+        isServerRunning={serverProcess?.running ?? false}
+        isConnected={status.connected}
+        serverUrl={serverProcess?.url}
+        remoteServerCount={remoteServerCount}
+      />
+      <ServerActions
+        isServerRunning={serverProcess?.running ?? false}
+        isConnected={status.connected}
+        canManageServer={platform.canManageServer}
+        onStartServer={handleStartServer}
+        onStopServer={handleStopServer}
+        onConnect={connect}
+        onDisconnect={disconnect}
+      />
+      {buildInfo && (
+        <BuildInfoButton serial={buildInfo.serial} onClick={() => setIsModalOpen(true)} />
+      )}
+    </>
+  )
+
+  // Render page content based on active tab
+  const renderPageContent = (): React.JSX.Element => {
+    switch (activeTab) {
+      case 'ports':
+        return (
+          <>
+            <PageHeader
+              title="MIDI Ports"
+              subtitle={
+                status.connected
+                  ? `${ports?.inputs.length ?? 0} inputs, ${ports?.outputs.length ?? 0} outputs`
+                  : undefined
+              }
+              actions={
+                status.connected && (
+                  <button onClick={refresh} className="btn btn-sm">
+                    Refresh
+                  </button>
+                )
+              }
+            />
+            <div className="page-content">
+              {!status.connected ? (
+                <div className="card text-center" style={{ padding: '3rem' }}>
+                  <p className="text-muted">
+                    {platform.canManageServer
+                      ? 'Start the server to see available MIDI ports'
+                      : 'Connect to a MIDI server to see available ports'}
+                  </p>
+                </div>
+              ) : ports ? (
+                <div className="list-detail-grid">
+                  <div className="grid-2">
+                    <PortList
+                      title="MIDI Inputs"
+                      ports={ports.inputs}
+                      openPortIds={openPortIds}
+                      selectedPortId={selectedPortId}
+                      onPortClick={handlePortClick}
+                    />
+                    <PortList
+                      title="MIDI Outputs"
+                      ports={ports.outputs}
+                      openPortIds={openPortIds}
+                      selectedPortId={selectedPortId}
+                      onPortClick={handlePortClick}
+                    />
+                  </div>
+                  <div>
+                    {selectedPort ? (
+                      <PortDetail
+                        port={selectedPort}
+                        onClose={handleClosePort}
+                        onMessagesReceived={handleMessagesReceived}
+                      />
+                    ) : (
+                      <div className="card text-center" style={{ padding: '3rem' }}>
+                        <p className="text-muted">Click a port to open it and view details</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </>
+        )
+
+      case 'routes':
+        return (
+          <>
+            <PageHeader
+              title="MIDI Routes"
+              subtitle={`${routes.length} route${routes.length !== 1 ? 's' : ''}`}
+              actions={
+                <button
+                  onClick={() => setIsAddRouteModalOpen(true)}
+                  className="btn btn-sm btn-primary"
+                >
+                  Add Route
+                </button>
+              }
+            />
+            <div className="page-content">
+              <RoutingPanel
+                routes={routes}
+                servers={discoveredServers}
+                onToggleRoute={handleToggleRoute}
+                onDeleteRoute={handleDeleteRoute}
+                onAddRoute={() => setIsAddRouteModalOpen(true)}
+              />
+            </div>
+          </>
+        )
+
+      case 'graph':
+        return (
+          <>
+            <PageHeader
+              title="Route Graph"
+              subtitle="Drag to connect ports"
+              actions={
+                <button
+                  onClick={() => setIsAddRouteModalOpen(true)}
+                  className="btn btn-sm btn-primary"
+                >
+                  Add Route
+                </button>
+              }
+            />
+            <div className="page-content-fill">
+              <RouteGraph
+                routes={routes}
+                servers={discoveredServers}
+                serverStatuses={serverStatuses}
+                fetchServerPorts={fetchServerPorts}
+                onCreateRoute={handleAddRoute}
+                onDeleteRoute={handleDeleteRoute}
+                onToggleRoute={handleToggleRoute}
+              />
+            </div>
+          </>
+        )
+    }
+  }
 
   return (
-    <div className="min-h-screen p-6">
+    <AppShell activeTab={activeTab} onTabChange={setActiveTab} headerStatus={headerStatus}>
+      <div className="page">{renderPageContent()}</div>
+
+      {/* Modals */}
       {buildInfo && (
-        <>
-          <BuildInfoButton serial={buildInfo.serial} onClick={() => setIsModalOpen(true)} />
-          <BuildInfoModal
-            buildInfo={buildInfo}
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-          />
-        </>
+        <BuildInfoModal
+          buildInfo={buildInfo}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+        />
       )}
       {!update.loading && update.supported && update.status && update.settings && (
         <>
@@ -395,127 +489,13 @@ export function Dashboard(): React.JSX.Element {
           />
         </>
       )}
-      <div className="max-w-6xl mx-auto space-y-6">
-        <header className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white">MIDI Server Dashboard</h1>
-          <p className="text-gray-400 mt-2">
-            {platform.canManageServer
-              ? 'Control and monitor MIDI servers on your network'
-              : 'Connect to MIDI HTTP Servers'}
-          </p>
-          <p className="text-xs text-gray-600 mt-1">Running in {platform.name} mode</p>
-        </header>
-
-        {/* Server Tabs */}
-        {discoveredServers.length > 0 && (
-          <ServerTabs
-            servers={discoveredServers}
-            selectedServerUrl={selectedServerUrl}
-            localServerUrl={localServerUrl}
-            onSelectServer={handleSelectServer}
-            serverStatuses={serverStatuses}
-          />
-        )}
-
-        {/* Server Control (only for local server) */}
-        {isViewingLocalServer && (
-          <ServerControl
-            connectionStatus={status}
-            serverProcess={serverProcess}
-            serverError={serverError}
-            canManageServer={platform.canManageServer}
-            onConnect={connect}
-            onDisconnect={disconnect}
-            onRefresh={refresh}
-            onStartServer={handleStartServer}
-            onStopServer={handleStopServer}
-          />
-        )}
-
-        {/* Remote server control */}
-        {!isViewingLocalServer && selectedServerUrl && (
-          <RemoteServerControl
-            serverUrl={selectedServerUrl}
-            serverName={discoveredServers.find((s) => s.apiUrl === selectedServerUrl)?.serverName ?? 'Remote Server'}
-            connectionStatus={serverStatuses.get(selectedServerUrl) ?? 'disconnected'}
-            getStatus={getRemoteServerStatus}
-            startServer={startRemoteServer}
-            stopServer={stopRemoteServer}
-          />
-        )}
-
-        {/* Port lists and details */}
-        {((isViewingLocalServer && status.connected) || (!isViewingLocalServer && remotePorts)) &&
-          displayPorts && (
-            <div className="grid lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 grid md:grid-cols-2 gap-6">
-                <PortList
-                  title="MIDI Inputs"
-                  ports={displayPorts.inputs}
-                  openPortIds={isViewingLocalServer ? openPortIds : new Set()}
-                  selectedPortId={isViewingLocalServer ? selectedPortId : null}
-                  onPortClick={isViewingLocalServer ? handlePortClick : () => {}}
-                />
-                <PortList
-                  title="MIDI Outputs"
-                  ports={displayPorts.outputs}
-                  openPortIds={isViewingLocalServer ? openPortIds : new Set()}
-                  selectedPortId={isViewingLocalServer ? selectedPortId : null}
-                  onPortClick={isViewingLocalServer ? handlePortClick : () => {}}
-                />
-              </div>
-
-              <div>
-                {isViewingLocalServer && selectedPort ? (
-                  <PortDetail
-                    port={selectedPort}
-                    onClose={handleClosePort}
-                    onMessagesReceived={handleMessagesReceived}
-                  />
-                ) : (
-                  <div className="bg-gray-800 rounded-lg p-4 h-full flex items-center justify-center">
-                    <p className="text-gray-500 text-center">
-                      {isViewingLocalServer
-                        ? 'Click a port to open it and view details'
-                        : 'Port interaction available on local server'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-        {/* No connection message */}
-        {isViewingLocalServer && !status.connected && !status.error && (
-          <div className="text-center py-12">
-            <p className="text-gray-500">
-              {platform.canManageServer
-                ? 'Start the server or connect to see available MIDI ports'
-                : 'Connect to a MIDI HTTP Server to see available ports'}
-            </p>
-          </div>
-        )}
-
-        {/* Routing Panel */}
-        {discoveredServers.length > 0 && (
-          <RoutingPanel
-            routes={routes}
-            servers={discoveredServers}
-            onToggleRoute={handleToggleRoute}
-            onDeleteRoute={handleDeleteRoute}
-            onAddRoute={() => setIsAddRouteModalOpen(true)}
-          />
-        )}
-
-        {/* Add Route Modal */}
-        <AddRouteModal
-          isOpen={isAddRouteModalOpen}
-          servers={discoveredServers}
-          onClose={() => setIsAddRouteModalOpen(false)}
-          onSave={handleAddRoute}
-          fetchServerPorts={fetchServerPorts}
-        />
-      </div>
-    </div>
+      <AddRouteModal
+        isOpen={isAddRouteModalOpen}
+        servers={discoveredServers}
+        onClose={() => setIsAddRouteModalOpen(false)}
+        onSave={handleAddRoute}
+        fetchServerPorts={fetchServerPorts}
+      />
+    </AppShell>
   )
 }

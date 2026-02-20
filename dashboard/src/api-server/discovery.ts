@@ -158,7 +158,7 @@ export class DiscoveryService extends EventEmitter<DiscoveryEvents> {
           // Calculate broadcast address from IP and netmask
           const ipParts = info.address.split('.').map(Number)
           const maskParts = info.netmask.split('.').map(Number)
-          const broadcastParts = ipParts.map((ip, i) => (ip | (~maskParts[i] & 255)))
+          const broadcastParts = ipParts.map((ip, i) => ip | (~maskParts[i] & 255))
           addresses.push(broadcastParts.join('.'))
         }
       }

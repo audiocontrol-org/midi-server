@@ -99,7 +99,9 @@ export class UpdateHandlers {
 
     this.sseClients.add(res)
     res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`)
-    res.write(`data: ${JSON.stringify({ type: 'status', status: this.updateService.getStatus() })}\n\n`)
+    res.write(
+      `data: ${JSON.stringify({ type: 'status', status: this.updateService.getStatus() })}\n\n`
+    )
 
     res.on('close', () => {
       this.sseClients.delete(res)

@@ -90,7 +90,7 @@ export class ApiServer {
   private initializeRoutingServices(localUrl: string): void {
     this.routesStorage = new RoutesStorage()
     this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
-    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort)
+    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort, this.logBuffer)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
@@ -396,9 +396,11 @@ export class ApiServer {
 
   private handleConfig(res: ServerResponse): void {
     res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({
-      midiServerPort: this.config.midiServerPort
-    }))
+    res.end(
+      JSON.stringify({
+        midiServerPort: this.config.midiServerPort
+      })
+    )
   }
 
   private readJsonBody<T>(req: IncomingMessage): Promise<T | null> {
