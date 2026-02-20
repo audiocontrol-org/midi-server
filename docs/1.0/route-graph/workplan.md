@@ -146,9 +146,9 @@ interface GraphEdge {
 
 ## Verification Checklist
 
-- [ ] Graph displays all discovered servers and their ports
-- [ ] Routes shown as edges with correct status colors
-- [ ] Nodes can be dragged and positions persist across refresh
-- [ ] New routes can be created by connecting port nodes
-- [ ] Routes can be deleted via graph interaction
-- [ ] Edge animation triggers when MIDI messages flow
+- [x] Graph displays all discovered servers and their ports
+- [x] Routes shown as edges with correct status colors
+- [x] Nodes can be dragged and positions persist across refresh
+- [x] New routes can be created by connecting port nodes
+- [x] Routes can be deleted via graph interaction
+- [ ] Edge animation triggers when MIDI messages flow (deferred)
