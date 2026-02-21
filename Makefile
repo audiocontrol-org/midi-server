@@ -4,8 +4,15 @@ BUILD_DIR := build
 BUILD_TYPE := Release
 BINARY := $(BUILD_DIR)/MidiHttpServer_artefacts/$(BUILD_TYPE)/MidiHttpServer
 
-# Package configuration
-VERSION := 1.0.0
+# Package configuration - read version from VERSION file
+VERSION_FILE := VERSION
+ifeq ($(wildcard $(VERSION_FILE)),)
+  $(error VERSION file not found. Create a VERSION file with a valid version number.)
+endif
+VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
+ifeq ($(VERSION),)
+  $(error VERSION file is empty. It must contain a valid version number.)
+endif
 INSTALL_LOCATION := /usr/local/bin
 
 # macOS installer (output from packaging/macos/build-installer.sh)
