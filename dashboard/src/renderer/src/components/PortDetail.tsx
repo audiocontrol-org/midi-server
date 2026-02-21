@@ -63,13 +63,19 @@ export function PortDetail({
   const clientRef = useRef(createClient())
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Check if this is a virtual port (portId starts with "virtual:")
+  const isVirtual = port.portId.startsWith('virtual:')
+  const virtualPortId = isVirtual ? port.portId.replace('virtual:', '') : null
+
   // Poll for messages on input ports
   useEffect(() => {
     if (port.type !== 'input') return
 
     const pollMessages = async (): Promise<void> => {
       try {
-        const response = await clientRef.current.getMessages(port.portId)
+        const response = isVirtual && virtualPortId
+          ? await clientRef.current.getVirtualMessages(virtualPortId)
+          : await clientRef.current.getMessages(port.portId)
         if (response.messages.length > 0) {
           onMessagesReceived(response.messages)
         }
@@ -80,12 +86,22 @@ export function PortDetail({
 
     const interval = setInterval(pollMessages, 100) // Poll every 100ms
     return () => clearInterval(interval)
-  }, [port.portId, port.type, onMessagesReceived])
+  }, [port.portId, port.type, onMessagesReceived, isVirtual, virtualPortId])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [port.messages])
+
+  const sendMessage = useCallback(
+    async (message: number[]) => {
+      if (isVirtual && virtualPortId) {
+        return clientRef.current.sendVirtualMessage(virtualPortId, message)
+      }
+      return clientRef.current.sendMessage(port.portId, message)
+    },
+    [port.portId, isVirtual, virtualPortId]
+  )
 
   const sendNote = useCallback(
     async (note: number, velocity: number) => {
@@ -93,11 +109,11 @@ export function PortDetail({
       setError(null)
       try {
         // Note On
-        await clientRef.current.sendMessage(port.portId, [0x90, note, velocity])
+        await sendMessage([0x90, note, velocity])
         // Note Off after 200ms
         setTimeout(async () => {
           try {
-            await clientRef.current.sendMessage(port.portId, [0x80, note, 0])
+            await sendMessage([0x80, note, 0])
           } catch {
             // Ignore note off errors
           }
@@ -108,7 +124,7 @@ export function PortDetail({
         setSending(false)
       }
     },
-    [port.portId]
+    [sendMessage]
   )
 
   const sendCC = useCallback(
@@ -116,14 +132,14 @@ export function PortDetail({
       setSending(true)
       setError(null)
       try {
-        await clientRef.current.sendMessage(port.portId, [0xb0, cc, value])
+        await sendMessage([0xb0, cc, value])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to send')
       } finally {
         setSending(false)
       }
     },
-    [port.portId]
+    [sendMessage]
   )
 
   return (
@@ -132,11 +148,12 @@ export function PortDetail({
         <div>
           <h3 className="text-lg font-semibold">{port.name}</h3>
           <p className="text-sm text-gray-400">
+            {isVirtual && <span className="text-purple-400">Virtual </span>}
             {port.type === 'input' ? 'Input' : 'Output'} • ID: {port.portId}
           </p>
         </div>
         <button onClick={onClose} className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm">
-          Close Port
+          {isVirtual ? 'Deselect' : 'Close Port'}
         </button>
       </div>
 

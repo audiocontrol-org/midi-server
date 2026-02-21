@@ -41,12 +41,29 @@ export interface RouteStatus {
   lastMessageTime: number | null
 }
 
+export interface VirtualPortConfig {
+  id: string
+  name: string
+  type: 'input' | 'output'
+  createdAt: number
+  isAutoCreated: boolean
+  associatedRouteId?: string
+}
+
+export interface VirtualPortsResponse {
+  virtualPorts: VirtualPortConfig[]
+  liveInputs: string[]
+  liveOutputs: string[]
+}
+
 export interface Route {
   id: string
   enabled: boolean
   source: RouteEndpoint
   destination: RouteEndpoint
   status?: RouteStatus
+  // Which server owns/stores this route (added by frontend for aggregated views)
+  ownerServer?: string
 }
 
 export class MidiServerClient {
@@ -135,6 +152,25 @@ export class MidiServerClient {
       body
     })
   }
+
+  // Virtual port methods - for ports created via /virtual endpoint
+  async getVirtualMessages(portId: string): Promise<MessagesResponse> {
+    const raw = await this.request<{ messages: number[][] }>(`/virtual/${portId}/messages`)
+    return {
+      messages: raw.messages.map((data, index) => ({
+        timestamp: Date.now() - (raw.messages.length - index) * 10,
+        data
+      }))
+    }
+  }
+
+  async sendVirtualMessage(portId: string, message: number[]): Promise<SendMessageResponse> {
+    const body = JSON.stringify({ message })
+    return this.request<SendMessageResponse>(`/virtual/${portId}/send`, {
+      method: 'POST',
+      body
+    })
+  }
 }
 
 export class ApiClient {
@@ -217,6 +253,42 @@ export class ApiClient {
     })
   }
 
+  // Remote server route management - for creating routes on other servers
+  async getRemoteServerRoutes(serverUrl: string): Promise<{ routes: Route[] }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ routes: Route[] }>(`/api/servers/${encodedUrl}/routes`)
+  }
+
+  async createRemoteServerRoute(
+    serverUrl: string,
+    route: { enabled: boolean; source: RouteEndpoint; destination: RouteEndpoint }
+  ): Promise<{ route: Route }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ route: Route }>(`/api/servers/${encodedUrl}/routes`, {
+      method: 'POST',
+      body: JSON.stringify(route)
+    })
+  }
+
+  async updateRemoteServerRoute(
+    serverUrl: string,
+    routeId: string,
+    updates: Partial<{ enabled: boolean }>
+  ): Promise<{ success: boolean }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ success: boolean }>(`/api/servers/${encodedUrl}/routes/${routeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    })
+  }
+
+  async deleteRemoteServerRoute(serverUrl: string, routeId: string): Promise<{ success: boolean }> {
+    const encodedUrl = encodeURIComponent(serverUrl)
+    return this.request<{ success: boolean }>(`/api/servers/${encodedUrl}/routes/${routeId}`, {
+      method: 'DELETE'
+    })
+  }
+
   async getLocalPorts(): Promise<PortsResponse> {
     return this.request<PortsResponse>('/api/local/ports')
   }
@@ -270,6 +342,29 @@ export class ApiClient {
     const encodedUrl = encodeURIComponent(serverUrl)
     return this.request<{ success: boolean }>(`/api/servers/${encodedUrl}/stop`, {
       method: 'POST'
+    })
+  }
+
+  // Virtual port management endpoints
+  async getVirtualPorts(): Promise<VirtualPortsResponse> {
+    return this.request<VirtualPortsResponse>('/api/virtual-ports')
+  }
+
+  async createVirtualPort(request: {
+    name: string
+    type: 'input' | 'output'
+    isAutoCreated?: boolean
+    associatedRouteId?: string
+  }): Promise<{ virtualPort: VirtualPortConfig }> {
+    return this.request<{ virtualPort: VirtualPortConfig }>('/api/virtual-ports', {
+      method: 'POST',
+      body: JSON.stringify(request)
+    })
+  }
+
+  async deleteVirtualPort(portId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/api/virtual-ports/${portId}`, {
+      method: 'DELETE'
     })
   }
 }

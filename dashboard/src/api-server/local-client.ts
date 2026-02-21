@@ -2,9 +2,38 @@ import * as http from 'http'
 import type { MidiClient, PortInfo } from './midi-client'
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: string
   timeout?: number
+}
+
+// Route types - native routing in C++
+export interface RouteEndpoint {
+  serverUrl: string
+  portId: string
+  portName: string
+}
+
+export interface RouteStatus {
+  routeId: string
+  status: 'active' | 'error' | 'disabled'
+  messagesRouted: number
+  error?: string
+  lastMessageTime?: number | null
+}
+
+export interface MidiRoute {
+  id: string
+  enabled: boolean
+  source: RouteEndpoint
+  destination: RouteEndpoint
+  status?: RouteStatus
+}
+
+export interface CreateRouteParams {
+  enabled?: boolean
+  source: RouteEndpoint
+  destination: RouteEndpoint
 }
 
 interface RawPortsResponse {
@@ -133,6 +162,73 @@ export class LocalClient implements MidiClient {
     return this.request<{ success: boolean; error?: string }>(`/port/${index}/send`, {
       method: 'POST',
       body: JSON.stringify({ message })
+    })
+  }
+
+  // Virtual port methods - these call C++ /virtual/* endpoints
+
+  async getVirtualPorts(): Promise<{ inputs: string[]; outputs: string[] }> {
+    return this.request<{ inputs: string[]; outputs: string[] }>('/virtual')
+  }
+
+  async createVirtualPort(
+    portId: string,
+    name: string,
+    type: 'input' | 'output'
+  ): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/virtual/${portId}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, type })
+    })
+  }
+
+  async deleteVirtualPort(portId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/virtual/${portId}`, {
+      method: 'DELETE'
+    })
+  }
+
+  async getVirtualMessages(portId: string): Promise<{ messages: number[][] }> {
+    return this.request<{ messages: number[][] }>(`/virtual/${portId}/messages`)
+  }
+
+  async sendVirtualMessage(
+    portId: string,
+    message: number[]
+  ): Promise<{ success: boolean; error?: string }> {
+    return this.request<{ success: boolean; error?: string }>(`/virtual/${portId}/send`, {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    })
+  }
+
+  // Route management methods - native routing in C++
+
+  async getRoutes(): Promise<{ routes: MidiRoute[] }> {
+    return this.request<{ routes: MidiRoute[] }>('/routes')
+  }
+
+  async createRoute(params: CreateRouteParams): Promise<{ route: MidiRoute }> {
+    return this.request<{ route: MidiRoute }>('/routes', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: params.enabled ?? true,
+        source: params.source,
+        destination: params.destination
+      })
+    })
+  }
+
+  async updateRoute(routeId: string, enabled: boolean): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/routes/${routeId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled })
+    })
+  }
+
+  async deleteRoute(routeId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/routes/${routeId}`, {
+      method: 'DELETE'
     })
   }
 }

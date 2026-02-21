@@ -6,10 +6,10 @@ import { ProcessManager } from './process-manager'
 import { LogBuffer } from './log-buffer'
 import { proxyToMidiServer } from './midi-proxy'
 import { DiscoveryService } from './discovery'
-import { RoutesStorage } from './routes-storage'
-import { RoutingEngine } from './routing-engine'
+import { VirtualPortsStorage } from './virtual-ports-storage'
 import { createRoutingHandlers, type RoutingHandlers } from './routing-handlers'
 import { UpdateHandlers } from './update-handlers'
+import { getLocalClient } from './local-client'
 
 export class ApiServer {
   private server: Server | null = null
@@ -21,8 +21,7 @@ export class ApiServer {
 
   // Routing services
   private discovery: DiscoveryService | null = null
-  private routesStorage: RoutesStorage | null = null
-  private routingEngine: RoutingEngine | null = null
+  private virtualPortsStorage: VirtualPortsStorage | null = null
   private routingHandlers: RoutingHandlers | null = null
   private updateHandlers: UpdateHandlers
 
@@ -36,6 +35,21 @@ export class ApiServer {
     // Subscribe to log entries for SSE broadcast
     this.logBuffer.subscribe((entry) => {
       this.broadcastLogEntry(entry)
+    })
+
+    // Update discovery service and recreate virtual ports when MIDI server port changes
+    this.processManager.onPortChange((port) => {
+      if (this.discovery) {
+        this.discovery.setMidiServerPort(port)
+      }
+      // Also update the config so new services get the right port
+      this.config.midiServerPort = port
+      // Recreate virtual ports now that MIDI server is running
+      this.recreateVirtualPorts()
+      // Sync routes from peers now that C++ binary is running
+      if (this.routingHandlers) {
+        this.routingHandlers.syncRoutesFromPeers(port).catch(console.error)
+      }
     })
   }
 
@@ -88,32 +102,59 @@ export class ApiServer {
   }
 
   private initializeRoutingServices(localUrl: string): void {
-    this.routesStorage = new RoutesStorage()
-    this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
-    this.routingEngine = new RoutingEngine(this.routesStorage, this.config.midiServerPort, this.logBuffer)
+    this.virtualPortsStorage = new VirtualPortsStorage()
+
+    // Get the current MIDI server port - prefer the running server's port over config
+    const currentStatus = this.processManager.getStatus()
+    const midiServerPort = currentStatus.port ?? this.config.midiServerPort
+    if (midiServerPort !== this.config.midiServerPort) {
+      console.log(`[ApiServer] Using running MIDI server port: ${midiServerPort}`)
+      this.config.midiServerPort = midiServerPort
+    }
+
+    this.discovery = new DiscoveryService(localUrl, midiServerPort)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
-      routes: this.routesStorage,
-      routingEngine: this.routingEngine,
+      virtualPorts: this.virtualPortsStorage,
       localServerUrl: localUrl,
-      localMidiServerPort: this.config.midiServerPort
+      localMidiServerPort: midiServerPort
     })
 
-    // Start services
-    this.discovery.start()
-    this.routingEngine.start()
+    // Recreate persisted virtual ports in C++ binary
+    this.recreateVirtualPorts()
 
-    console.log('[ApiServer] Routing services initialized')
+    // Start discovery service (routing is now native in C++)
+    this.discovery.start()
+
+    console.log('[ApiServer] Services initialized (routing is native in C++)')
+  }
+
+  private async recreateVirtualPorts(): Promise<void> {
+    if (!this.virtualPortsStorage) return
+
+    const ports = this.virtualPortsStorage.getAll()
+    if (ports.length === 0) return
+
+    console.log(`[ApiServer] Recreating ${ports.length} virtual ports...`)
+
+    const client = getLocalClient(this.config.midiServerPort)
+    for (const port of ports) {
+      try {
+        await client.createVirtualPort(port.id, port.name, port.type)
+        console.log(`[ApiServer] Recreated virtual port: ${port.name}`)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.error(`[ApiServer] Failed to recreate virtual port ${port.name}: ${message}`)
+        // Continue on error - don't fail startup
+      }
+    }
   }
 
   async stop(): Promise<void> {
     this.updateHandlers.dispose()
 
-    // Stop routing services
-    if (this.routingEngine) {
-      this.routingEngine.stop()
-    }
+    // Stop discovery service (routing is native in C++)
     if (this.discovery) {
       this.discovery.stop()
     }
@@ -243,6 +284,23 @@ export class ApiServer {
           }
         }
 
+        // Virtual port management routes
+        if (path === '/api/virtual-ports' && req.method === 'GET') {
+          return await this.routingHandlers.handleGetVirtualPorts(res)
+        }
+        if (path === '/api/virtual-ports' && req.method === 'POST') {
+          return await this.routingHandlers.handleCreateVirtualPort(req, res)
+        }
+
+        // Virtual port CRUD with ID
+        const virtualPortMatch = path.match(/^\/api\/virtual-ports\/([^/]+)$/)
+        if (virtualPortMatch) {
+          const portId = virtualPortMatch[1]
+          if (req.method === 'DELETE') {
+            return await this.routingHandlers.handleDeleteVirtualPort(res, portId)
+          }
+        }
+
         // Remote server proxy routes
         const serverPortsMatch = path.match(/^\/api\/servers\/([^/]+)\/ports$/)
         if (serverPortsMatch && req.method === 'GET') {
@@ -277,6 +335,40 @@ export class ApiServer {
         const serverStopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
         if (serverStopMatch && req.method === 'POST') {
           return await this.routingHandlers.handleRemoteServerStop(res, serverStopMatch[1])
+        }
+
+        // Remote server route management
+        const serverRoutesMatch = path.match(/^\/api\/servers\/([^/]+)\/routes$/)
+        if (serverRoutesMatch) {
+          if (req.method === 'GET') {
+            return await this.routingHandlers.handleRemoteServerGetRoutes(res, serverRoutesMatch[1])
+          }
+          if (req.method === 'POST') {
+            return await this.routingHandlers.handleRemoteServerCreateRoute(
+              req,
+              res,
+              serverRoutesMatch[1]
+            )
+          }
+        }
+
+        const serverRouteMatch = path.match(/^\/api\/servers\/([^/]+)\/routes\/([^/]+)$/)
+        if (serverRouteMatch) {
+          if (req.method === 'PUT') {
+            return await this.routingHandlers.handleRemoteServerUpdateRoute(
+              req,
+              res,
+              serverRouteMatch[1],
+              serverRouteMatch[2]
+            )
+          }
+          if (req.method === 'DELETE') {
+            return await this.routingHandlers.handleRemoteServerDeleteRoute(
+              res,
+              serverRouteMatch[1],
+              serverRouteMatch[2]
+            )
+          }
         }
       }
 

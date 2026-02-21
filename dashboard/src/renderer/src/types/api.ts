@@ -1,7 +1,8 @@
 export interface MidiPort {
-  id: number
+  id: number | string // number for physical ports, string for virtual ports
   name: string
   type: 'input' | 'output'
+  isVirtual?: boolean // true for virtual ports
 }
 
 export interface PortsResponse {

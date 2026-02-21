@@ -18,15 +18,20 @@ import { useRouteGraph, getPortFromNodeId } from '@/hooks/useRouteGraph'
 import type { PortNodeData } from '@/hooks/useRouteGraph'
 import { useNodePositions } from '@/hooks/useNodePositions'
 import { useGraphGestures } from '@/hooks/useGraphGestures'
-import type { Route, DiscoveredServer, RouteEndpoint } from '@/api/client'
+import type { Route, DiscoveredServer, RouteEndpoint, VirtualPortConfig } from '@/api/client'
 import type { PortsResponse } from '@/types/api'
 
 interface RouteGraphProps {
   routes: Route[]
   servers: DiscoveredServer[]
+  virtualPorts: VirtualPortConfig[]
   serverStatuses: Map<string, 'connected' | 'disconnected' | 'checking'>
   fetchServerPorts: (serverUrl: string) => Promise<PortsResponse>
-  onCreateRoute: (source: RouteEndpoint, destination: RouteEndpoint) => Promise<void>
+  onCreateRoute: (
+    source: RouteEndpoint,
+    destination: RouteEndpoint,
+    sourceServerApiUrl: string
+  ) => Promise<void>
   onDeleteRoute: (routeId: string) => Promise<void>
   onToggleRoute: (routeId: string, enabled: boolean) => Promise<void>
 }
@@ -43,6 +48,7 @@ const edgeTypes = {
 export function RouteGraph({
   routes,
   servers,
+  virtualPorts,
   serverStatuses,
   fetchServerPorts,
   onCreateRoute,
@@ -59,6 +65,7 @@ export function RouteGraph({
   } = useRouteGraph({
     routes,
     servers,
+    virtualPorts,
     serverStatuses,
     fetchServerPorts,
     savedPositions: positions
@@ -143,6 +150,21 @@ export function RouteGraph({
     [nodes]
   )
 
+  // Convert API URL to MIDI server URL for routing
+  const getMidiServerUrl = useCallback(
+    (apiUrl: string): string => {
+      const server = servers.find((s) => s.apiUrl === apiUrl)
+      if (!server || server.isLocal) return 'local'
+      try {
+        const url = new URL(server.apiUrl)
+        return `http://${url.hostname}:${server.midiServerPort}`
+      } catch {
+        return apiUrl
+      }
+    },
+    [servers]
+  )
+
   // Handle new connections
   const onConnect = useCallback(
     async (connection: Connection) => {
@@ -159,25 +181,28 @@ export function RouteGraph({
       const sourceData = sourceNode.data as PortNodeData
       const targetData = targetNode.data as PortNodeData
 
+      // Source API URL (from node ID) - used to determine which server owns the route
+      const sourceServerApiUrl = sourceInfo.serverUrl
+
       const routeSource: RouteEndpoint = {
-        serverUrl: sourceInfo.serverUrl,
+        serverUrl: getMidiServerUrl(sourceInfo.serverUrl),
         portId: sourceData.inputPortId ?? '',
         portName: sourceData.label
       }
 
       const routeDestination: RouteEndpoint = {
-        serverUrl: targetInfo.serverUrl,
+        serverUrl: getMidiServerUrl(targetInfo.serverUrl),
         portId: targetData.outputPortId ?? '',
         portName: targetData.label
       }
 
       try {
-        await onCreateRoute(routeSource, routeDestination)
+        await onCreateRoute(routeSource, routeDestination, sourceServerApiUrl)
       } catch (err) {
         console.error('Failed to create route:', err)
       }
     },
-    [nodes, onCreateRoute]
+    [nodes, onCreateRoute, getMidiServerUrl]
   )
 
   // Handle edge deletion

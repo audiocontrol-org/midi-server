@@ -15,8 +15,11 @@
 #include "JsonBuilder.h"
 #include "MidiPort.h"
 #include "VirtualMidiPort.h"
+#include "RouteManager.h"
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -31,19 +34,73 @@
 class MidiHttpServer
 {
 public:
-    explicit MidiHttpServer(int port) : serverPort(port) {}
+    explicit MidiHttpServer(int port) : serverPort(port), routeManager() {
+        // Set up local message forwarder for RouteManager
+        routeManager.setLocalMessageForwarder([this](const std::string& destPortId,
+                                                      const std::vector<uint8_t>& data) {
+            forwardToLocalDestination(destPortId, data);
+        });
+    }
 
     ~MidiHttpServer() {
         stopServer();
     }
 
+    // Forward a message to a local destination port (used by RouteManager for local routes)
+    void forwardToLocalDestination(const std::string& destPortId,
+                                    const std::vector<uint8_t>& data) {
+        std::lock_guard<std::mutex> lock(portsMutex);
+
+        // Check if it's a virtual port
+        if (destPortId.rfind("virtual:", 0) == 0) {
+            std::string virtualId = destPortId.substr(8);
+            auto it = virtualPorts.find(virtualId);
+            if (it != virtualPorts.end()) {
+                it->second->sendMessage(data);
+            } else {
+                std::cerr << "[RouteManager] Virtual destination not found: "
+                          << virtualId << std::endl;
+            }
+            return;
+        }
+
+        // Check physical ports
+        auto it = ports.find(destPortId);
+        if (it != ports.end()) {
+            it->second->sendMessage(data);
+        } else {
+            std::cerr << "[RouteManager] Destination port not found: "
+                      << destPortId << std::endl;
+        }
+    }
+
     void startServer() {
+        // Auto-open ports referenced by any routes persisted from last run.
+        // Retry after delays: CoreMIDI sometimes doesn't enumerate all devices immediately.
+        autoOpenPortsForAllRoutes();
+        retryThreadRunning = true;
+        retryThread = std::thread([this]() {
+            // Wait 2s, retry if not cancelled
+            std::unique_lock<std::mutex> lock(retryMutex);
+            retryCV.wait_for(lock, std::chrono::seconds(2), [this] { return !retryThreadRunning.load(); });
+            if (!retryThreadRunning) return;
+            lock.unlock();
+            autoOpenPortsForAllRoutes();
+
+            // Wait 5s more, retry if not cancelled
+            lock.lock();
+            retryCV.wait_for(lock, std::chrono::seconds(5), [this] { return !retryThreadRunning.load(); });
+            if (!retryThreadRunning) return;
+            lock.unlock();
+            autoOpenPortsForAllRoutes();
+        });
+
         server = std::make_unique<httplib::Server>();
 
         // Add CORS headers to all responses
         server->set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
             res.set_header("Access-Control-Allow-Origin", "*");
-            res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+            res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers", "Content-Type");
         });
 
@@ -106,6 +163,15 @@ public:
 
                 bool isInput = (type == "input");
                 auto port = std::make_unique<MidiPort>(portId, name, isInput);
+
+                // Set up routing callback for input ports
+                if (isInput) {
+                    port->setMessageCallback([this](const std::string& srcPortId,
+                                                    const std::vector<uint8_t>& data) {
+                        routeManager.forwardMessage(srcPortId, data);
+                    });
+                }
+
                 bool success = port->open();
 
                 if (success) {
@@ -294,7 +360,17 @@ public:
                 }
 
                 bool isInput = (type == "input");
-                auto port = std::make_unique<VirtualMidiPort>(name, isInput);
+                std::string fullPortId = "virtual:" + portId;
+                auto port = std::make_unique<VirtualMidiPort>(fullPortId, name, isInput);
+
+                // Set up routing callback for input ports
+                if (isInput) {
+                    port->setMessageCallback([this](const std::string& srcPortId,
+                                                    const std::vector<uint8_t>& data) {
+                        routeManager.forwardMessage(srcPortId, data);
+                    });
+                }
+
                 bool success = port->open();
 
                 if (success) {
@@ -488,6 +564,200 @@ public:
             }
         });
 
+        //==============================================================================
+        // Route management endpoints
+        //==============================================================================
+
+        // GET /routes - List all routes
+        server->Get("/routes", [this](const httplib::Request&, httplib::Response& res) {
+            auto routes = routeManager.getAllRoutes();
+
+            JsonBuilder json;
+            json.startObject().key("routes").startArray();
+
+            for (const auto& route : routes) {
+                json.startObject()
+                    .key("id").value(route.id)
+                    .key("enabled").value(route.enabled)
+                    .key("source").startObject()
+                        .key("serverUrl").value(route.source.serverUrl)
+                        .key("portId").value(route.source.portId)
+                        .key("portName").value(route.source.portName)
+                    .endObject()
+                    .key("destination").startObject()
+                        .key("serverUrl").value(route.destination.serverUrl)
+                        .key("portId").value(route.destination.portId)
+                        .key("portName").value(route.destination.portName)
+                    .endObject()
+                    .key("status").startObject()
+                        .key("routeId").value(route.id)
+                        .key("status").value(route.enabled ? std::string("active") : std::string("disabled"))
+                        .key("messagesRouted").value((int)route.messagesForwarded)
+                    .endObject()
+                .endObject();
+            }
+
+            json.endArray().endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
+        // POST /routes - Create a new route
+        server->Post("/routes", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Parse JSON body - expecting source and destination endpoint objects
+                RouteEndpoint source, destination;
+                bool enabled = true;
+
+                // Parse source endpoint
+                size_t sourceStart = req.body.find("\"source\"");
+                if (sourceStart != std::string::npos) {
+                    source.serverUrl = extractNestedJsonString(req.body, sourceStart, "serverUrl");
+                    source.portId = extractNestedJsonString(req.body, sourceStart, "portId");
+                    source.portName = extractNestedJsonString(req.body, sourceStart, "portName");
+                }
+
+                // Parse destination endpoint
+                size_t destStart = req.body.find("\"destination\"");
+                if (destStart != std::string::npos) {
+                    destination.serverUrl = extractNestedJsonString(req.body, destStart, "serverUrl");
+                    destination.portId = extractNestedJsonString(req.body, destStart, "portId");
+                    destination.portName = extractNestedJsonString(req.body, destStart, "portName");
+                }
+
+                // Parse enabled (optional, defaults to true)
+                size_t enabledPos = req.body.find("\"enabled\":");
+                if (enabledPos != std::string::npos) {
+                    enabledPos += 10;
+                    while (enabledPos < req.body.length() &&
+                           (req.body[enabledPos] == ' ' || req.body[enabledPos] == '\t')) {
+                        enabledPos++;
+                    }
+                    enabled = (req.body.substr(enabledPos, 4) == "true");
+                }
+
+                // Parse id (optional, allows pre-specified ID for cross-server replication)
+                std::string prespecifiedId;
+                size_t idPos = req.body.find("\"id\":\"");
+                if (idPos != std::string::npos) {
+                    idPos += 6;
+                    size_t idEnd = req.body.find("\"", idPos);
+                    if (idEnd != std::string::npos) {
+                        prespecifiedId = req.body.substr(idPos, idEnd - idPos);
+                    }
+                }
+
+                if (source.portId.empty() || destination.portId.empty()) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Missing source.portId or destination.portId"))
+                        .endObject();
+                    res.status = 400;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                std::string routeId = routeManager.addRoute(source, destination, enabled, prespecifiedId);
+
+                // Auto-open any local physical ports the route references
+                autoOpenPortsForRoute(source, destination);
+
+                JsonBuilder json;
+                json.startObject()
+                    .key("route").startObject()
+                        .key("id").value(routeId)
+                        .key("enabled").value(enabled)
+                        .key("source").startObject()
+                            .key("serverUrl").value(source.serverUrl)
+                            .key("portId").value(source.portId)
+                            .key("portName").value(source.portName)
+                        .endObject()
+                        .key("destination").startObject()
+                            .key("serverUrl").value(destination.serverUrl)
+                            .key("portId").value(destination.portId)
+                            .key("portName").value(destination.portName)
+                        .endObject()
+                    .endObject()
+                .endObject();
+                res.status = 201;
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
+        // PUT /routes/:routeId - Update a route (enable/disable)
+        server->Put("/routes/:routeId", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string routeId = req.path_params.at("routeId");
+
+            try {
+                // Parse enabled field
+                size_t enabledPos = req.body.find("\"enabled\":");
+                if (enabledPos == std::string::npos) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Missing enabled field"))
+                        .endObject();
+                    res.status = 400;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                enabledPos += 10;
+                while (enabledPos < req.body.length() &&
+                       (req.body[enabledPos] == ' ' || req.body[enabledPos] == '\t')) {
+                    enabledPos++;
+                }
+                bool enabled = (req.body.substr(enabledPos, 4) == "true");
+
+                bool success = routeManager.setRouteEnabled(routeId, enabled);
+                if (!success) {
+                    JsonBuilder json;
+                    json.startObject()
+                        .key("error").value(std::string("Route not found"))
+                        .endObject();
+                    res.status = 404;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+
+                JsonBuilder json;
+                json.startObject()
+                    .key("success").value(true)
+                    .key("routeId").value(routeId)
+                    .key("enabled").value(enabled)
+                    .endObject();
+                res.set_content(json.toString(), "application/json");
+            } catch (const std::exception& e) {
+                JsonBuilder json;
+                json.startObject().key("error").value(e.what()).endObject();
+                res.status = 400;
+                res.set_content(json.toString(), "application/json");
+            }
+        });
+
+        // DELETE /routes/:routeId - Delete a route
+        server->Delete("/routes/:routeId", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string routeId = req.path_params.at("routeId");
+
+            bool success = routeManager.removeRoute(routeId);
+            if (!success) {
+                JsonBuilder json;
+                json.startObject()
+                    .key("error").value(std::string("Route not found"))
+                    .endObject();
+                res.status = 404;
+                res.set_content(json.toString(), "application/json");
+                return;
+            }
+
+            JsonBuilder json;
+            json.startObject().key("success").value(true).endObject();
+            res.set_content(json.toString(), "application/json");
+        });
+
         // Start server in a separate thread
         serverThread = std::thread([this]() {
             if (serverPort == 0) {
@@ -507,6 +777,16 @@ public:
     }
 
     void stopServer() {
+        // Signal and join retry thread before destroying anything it touches
+        {
+            std::lock_guard<std::mutex> lock(retryMutex);
+            retryThreadRunning = false;
+        }
+        retryCV.notify_all();
+        if (retryThread.joinable()) {
+            retryThread.join();
+        }
+
         if (server) {
             server->stop();
         }
@@ -523,9 +803,120 @@ private:
     int serverPort;
     std::unique_ptr<httplib::Server> server;
     std::thread serverThread;
+    std::thread retryThread;
+    std::atomic<bool> retryThreadRunning{false};
+    std::mutex retryMutex;
+    std::condition_variable retryCV;
     std::map<std::string, std::unique_ptr<MidiPort>> ports;
     std::map<std::string, std::unique_ptr<VirtualMidiPort>> virtualPorts;
     std::mutex portsMutex;
+    RouteManager routeManager;
+
+    // Returns true if serverUrl refers to this server instance:
+    // either the "local" sentinel or an absolute URL pointing to our own port.
+    bool isSelf(const std::string& serverUrl) const {
+        if (serverUrl.empty() || serverUrl == "local") return true;
+        // Check if the URL's port component matches ours
+        size_t colonPos = serverUrl.rfind(':');
+        if (colonPos != std::string::npos) {
+            try {
+                int urlPort = std::stoi(serverUrl.substr(colonPos + 1));
+                if (urlPort == serverPort) return true;
+            } catch (...) {}
+        }
+        return false;
+    }
+
+    // Returns true if the endpoint is a local physical port (not virtual, not remote)
+    bool isLocalPhysical(const std::string& serverUrl, const std::string& portId) const {
+        return isSelf(serverUrl) && portId.rfind("virtual:", 0) == std::string::npos;
+    }
+
+    // Ensures a local physical port is open, opening it if needed.
+    // isInput is inferred from portId prefix ("input-" = true, "output-" = false).
+    void ensureLocalPortOpen(const std::string& portId, const std::string& portName) {
+        {
+            std::lock_guard<std::mutex> lock(portsMutex);
+            if (ports.find(portId) != ports.end()) return;
+        }
+
+        bool isInput = (portId.rfind("input-", 0) == 0);
+        auto port = std::make_unique<MidiPort>(portId, portName, isInput);
+
+        if (isInput) {
+            port->setMessageCallback([this](const std::string& srcPortId,
+                                            const std::vector<uint8_t>& data) {
+                routeManager.forwardMessage(srcPortId, data);
+            });
+        }
+
+        bool success = port->open();
+        if (success) {
+            std::lock_guard<std::mutex> lock(portsMutex);
+            ports[portId] = std::move(port);
+            std::cout << "[MidiHttpServer] Auto-opened " << (isInput ? "input" : "output")
+                      << " port: " << portName << std::endl;
+        } else {
+            std::cerr << "[MidiHttpServer] Failed to auto-open port: "
+                      << portName << std::endl;
+        }
+    }
+
+    // Auto-opens any local physical ports referenced by a route's endpoints.
+    void autoOpenPortsForRoute(const RouteEndpoint& source, const RouteEndpoint& destination) {
+        if (isLocalPhysical(source.serverUrl, source.portId) && !source.portName.empty()) {
+            ensureLocalPortOpen(source.portId, source.portName);
+        }
+        if (isLocalPhysical(destination.serverUrl, destination.portId) && !destination.portName.empty()) {
+            ensureLocalPortOpen(destination.portId, destination.portName);
+        }
+    }
+
+    // Auto-opens ports for all persisted routes (called at startup).
+    void autoOpenPortsForAllRoutes() {
+        auto routes = routeManager.getAllRoutes();
+        for (const auto& route : routes) {
+            autoOpenPortsForRoute(route.source, route.destination);
+        }
+    }
+
+    // Helper to extract a string value from a nested JSON object (static — no server state needed)
+    static std::string extractNestedJsonString(const std::string& json,
+                                                size_t objectStart,
+                                                const std::string& key) {
+        // Find the opening brace after objectStart
+        size_t braceStart = json.find('{', objectStart);
+        if (braceStart == std::string::npos) return "";
+
+        // Find matching closing brace
+        int braceCount = 1;
+        size_t braceEnd = braceStart + 1;
+        while (braceEnd < json.length() && braceCount > 0) {
+            if (json[braceEnd] == '{') braceCount++;
+            else if (json[braceEnd] == '}') braceCount--;
+            braceEnd++;
+        }
+        if (braceCount != 0) return "";
+
+        std::string objStr = json.substr(braceStart, braceEnd - braceStart);
+
+        // Find the key within this object
+        std::string searchKey = "\"" + key + "\":";
+        size_t keyPos = objStr.find(searchKey);
+        if (keyPos == std::string::npos) {
+            searchKey = "\"" + key + "\": ";
+            keyPos = objStr.find(searchKey);
+            if (keyPos == std::string::npos) return "";
+        }
+
+        size_t valueStart = objStr.find('"', keyPos + searchKey.length());
+        if (valueStart == std::string::npos) return "";
+
+        size_t valueEnd = objStr.find('"', valueStart + 1);
+        if (valueEnd == std::string::npos) return "";
+
+        return objStr.substr(valueStart + 1, valueEnd - valueStart - 1);
+    }
 };
 
 //==============================================================================

@@ -1,25 +1,37 @@
-import type { Route, DiscoveredServer } from '@/api/client'
+import type { Route, DiscoveredServer, VirtualPortConfig } from '@/api/client'
 
 interface RoutingPanelProps {
   routes: Route[]
   servers: DiscoveredServer[]
+  virtualPorts: VirtualPortConfig[]
   onToggleRoute: (routeId: string, enabled: boolean) => void
   onDeleteRoute: (routeId: string) => void
   onAddRoute: () => void
+  onAddVirtualPort: () => void
+  onDeleteVirtualPort: (portId: string) => void
 }
 
 export function RoutingPanel({
   routes,
   servers,
+  virtualPorts,
   onToggleRoute,
   onDeleteRoute,
-  onAddRoute
+  onAddRoute,
+  onAddVirtualPort,
+  onDeleteVirtualPort
 }: RoutingPanelProps): React.JSX.Element {
   const getServerName = (serverUrl: string): string => {
     if (serverUrl === 'local') return 'Local'
     const server = servers.find((s) => s.apiUrl === serverUrl)
     if (server?.isLocal) return 'Local'
     return server?.serverName ?? serverUrl
+  }
+
+  const getRouteOwnerName = (ownerServer: string | undefined): string | null => {
+    if (!ownerServer || ownerServer === 'local') return null
+    const server = servers.find((s) => s.apiUrl === ownerServer)
+    return server?.serverName ?? ownerServer
   }
 
   const getStatusColor = (status: string): string => {
@@ -109,6 +121,16 @@ export function RoutingPanel({
                     {route.status.messagesRouted} msgs
                   </span>
                 )}
+
+                {/* Remote owner indicator */}
+                {getRouteOwnerName(route.ownerServer) && (
+                  <span
+                    className="text-xs text-indigo-400 flex-shrink-0"
+                    title={`Route stored on ${getRouteOwnerName(route.ownerServer)}`}
+                  >
+                    @{getRouteOwnerName(route.ownerServer)}
+                  </span>
+                )}
               </div>
 
               {/* Controls */}
@@ -150,6 +172,74 @@ export function RoutingPanel({
           ))}
         </div>
       )}
+
+      {/* Virtual Ports Section */}
+      <div className="mt-6 pt-4 border-t border-gray-700">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Virtual Ports</h2>
+          <button
+            onClick={onAddVirtualPort}
+            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded transition-colors"
+          >
+            Add Virtual Port
+          </button>
+        </div>
+
+        {virtualPorts.length === 0 ? (
+          <p className="text-gray-500 text-center py-4">
+            No virtual ports. Create a virtual port to enable software routing.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {virtualPorts.map((port) => (
+              <div
+                key={port.id}
+                className="bg-gray-700 rounded-lg p-3 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {/* Virtual port indicator */}
+                  <span className="w-2.5 h-2.5 rounded-full bg-purple-500 flex-shrink-0" />
+
+                  {/* Port info */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="text-white text-sm truncate" title={port.name}>
+                      {port.name}
+                    </span>
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ${
+                        port.type === 'input'
+                          ? 'bg-green-900 text-green-300'
+                          : 'bg-blue-900 text-blue-300'
+                      }`}
+                    >
+                      {port.type}
+                    </span>
+                    {port.isAutoCreated && (
+                      <span className="text-xs text-gray-500">(auto)</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Delete button */}
+                <button
+                  onClick={() => onDeleteVirtualPort(port.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                  title="Delete virtual port"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
