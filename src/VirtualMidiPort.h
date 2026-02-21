@@ -77,8 +77,10 @@ public:
         virtualOutput.reset();
     }
 
-    // Send a message through the virtual output port
-    // Other apps listening to this port will receive the message
+    // Send a message through the virtual output port.
+    // Emits via CoreMIDI so connected DAWs/WebMIDI receive it, AND queues
+    // in the HTTP message queue so HTTP-polling clients (e.g. web editors)
+    // can retrieve it via GET /virtual/:id/messages.
     void sendMessage(const std::vector<uint8_t>& data) {
         if (!virtualOutput) {
             std::cerr << "Cannot send: virtual output not open\n";
@@ -110,6 +112,13 @@ public:
             );
         } else {
             std::cerr << "Warning: Invalid MIDI message length: " << data.size() << " bytes\n";
+            return;
+        }
+
+        // Also queue for HTTP polling (GET /virtual/:id/messages)
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            messageQueue.push(data);
         }
     }
 
