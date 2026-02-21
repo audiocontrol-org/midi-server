@@ -49,6 +49,9 @@ export default defineConfig({
       alias: {
         '@shared': resolve('src/shared')
       }
+    },
+    define: {
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
     }
   },
   renderer: {

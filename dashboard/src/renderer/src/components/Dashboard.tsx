@@ -63,6 +63,9 @@ export function Dashboard(): React.JSX.Element {
   const [virtualPorts, setVirtualPorts] = useState<VirtualPortConfig[]>([])
   const [isAddVirtualPortModalOpen, setIsAddVirtualPortModalOpen] = useState(false)
 
+  // Error state for user feedback
+  const [serverError, setServerError] = useState<string | null>(null)
+
   // Fetch build info on mount
   useEffect(() => {
     platform.getBuildInfo().then(setBuildInfo).catch(console.error)
@@ -223,12 +226,15 @@ export function Dashboard(): React.JSX.Element {
   }, [platform, status.connected, connect])
 
   const handleStartServer = useCallback(async () => {
+    setServerError(null)
     try {
       const process = await platform.startServer()
       setServerProcess(process)
       connect()
     } catch (err) {
-      console.error('Failed to start server:', err)
+      const message = err instanceof Error ? err.message : String(err)
+      platform.addLog(`Failed to start server: ${message}`, 'error')
+      setServerError(message)
     }
   }, [platform, connect])
 
@@ -240,7 +246,8 @@ export function Dashboard(): React.JSX.Element {
       setOpenPorts(new Map())
       setSelectedPortId(null)
     } catch (err) {
-      console.error('Failed to stop server:', err)
+      const message = err instanceof Error ? err.message : String(err)
+      platform.addLog(`Failed to stop server: ${message}`, 'error')
     }
   }, [platform, disconnect])
 
@@ -489,9 +496,7 @@ export function Dashboard(): React.JSX.Element {
         onConnect={connect}
         onDisconnect={disconnect}
       />
-      {buildInfo && (
-        <BuildInfoButton serial={buildInfo.serial} onClick={() => setIsModalOpen(true)} />
-      )}
+      <BuildInfoButton serial={buildInfo?.serial} onClick={() => setIsModalOpen(true)} />
     </>
   )
 
@@ -519,11 +524,23 @@ export function Dashboard(): React.JSX.Element {
             <div className="page-content">
               {!status.connected ? (
                 <div className="card text-center" style={{ padding: '3rem' }}>
-                  <p className="text-muted">
+                  <p className="text-muted" style={{ marginBottom: '1rem' }}>
                     {platform.canManageServer
                       ? 'Start the server to see available MIDI ports'
                       : 'Connect to a MIDI server to see available ports'}
                   </p>
+                  {platform.canManageServer ? (
+                    <button onClick={handleStartServer} className="btn btn-primary">
+                      Start Server
+                    </button>
+                  ) : (
+                    <button onClick={connect} className="btn btn-primary">
+                      Connect
+                    </button>
+                  )}
+                  {serverError && (
+                    <p className="text-red-500 mt-4 text-sm">{serverError}</p>
+                  )}
                 </div>
               ) : ports ? (
                 <div className="list-detail-grid">
@@ -629,13 +646,11 @@ export function Dashboard(): React.JSX.Element {
       <div className="page">{renderPageContent()}</div>
 
       {/* Modals */}
-      {buildInfo && (
-        <BuildInfoModal
-          buildInfo={buildInfo}
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-        />
-      )}
+      <BuildInfoModal
+        buildInfo={buildInfo}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
       {!update.loading && update.supported && update.status && update.settings && (
         <>
           <UpdateSettingsButton

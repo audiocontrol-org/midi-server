@@ -6,6 +6,7 @@ import type {
   BuildInfo
 } from './types'
 import type { UpdateSettings, UpdateStatus } from '@shared/types/update'
+import { logStore } from '@/stores/log-store'
 
 /**
  * HTTP-based platform implementation.
@@ -25,24 +26,35 @@ export class HttpPlatform implements PlatformServices {
   constructor(name: 'electron' | 'web', apiBaseUrl: string) {
     this.name = name
     this.apiBaseUrl = apiBaseUrl
+    console.log(`[HttpPlatform] Initialized: name=${name}, apiBaseUrl=${apiBaseUrl || '(relative)'}`)
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.apiBaseUrl}${path}`
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: response.statusText }))
+        const message = error.error || `HTTP ${response.status}`
+        console.error(`[HttpPlatform] Request failed: ${options.method || 'GET'} ${url} - ${message}`)
+        throw new Error(message)
       }
-    })
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: response.statusText }))
-      throw new Error(error.error || `HTTP ${response.status}`)
+      return response.json()
+    } catch (err) {
+      // Log network errors (connection refused, timeout, etc.)
+      if (err instanceof TypeError) {
+        console.error(`[HttpPlatform] Network error: ${options.method || 'GET'} ${url} - ${err.message}`)
+      }
+      throw err
     }
-
-    return response.json()
   }
 
   async startServer(port?: number): Promise<ServerProcess> {
@@ -148,12 +160,17 @@ export class HttpPlatform implements PlatformServices {
   }
 
   addLog(message: string, severity: LogSeverity): void {
-    // Fire and forget - send log to API server
+    // ALWAYS add to local store first - this guarantees the log is captured
+    logStore.add(message, severity, 'dashboard')
+
+    // Then try to sync to API
     this.request('/api/logs', {
       method: 'POST',
       body: JSON.stringify({ message, severity })
     }).catch((err) => {
-      console.error('Failed to add log:', err)
+      // Log the API failure locally too
+      const apiError = err instanceof Error ? err.message : String(err)
+      logStore.add(`[API sync failed] ${apiError}`, 'warning', 'system')
     })
   }
 

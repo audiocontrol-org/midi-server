@@ -33,8 +33,8 @@ function getBundledBinaryPath(): string {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1200,
+    height: 700,
     title: 'AudioControl MidiServer',
     show: false,
     autoHideMenuBar: true,

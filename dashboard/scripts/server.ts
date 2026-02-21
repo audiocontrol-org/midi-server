@@ -111,7 +111,11 @@ async function startServer(
 
 function buildElectron(): void {
   console.log('Building Electron main/preload...')
-  execSync('npx electron-vite build --outDir out', { cwd: ROOT_DIR, stdio: 'inherit' })
+  execSync('npx electron-vite build --outDir out', {
+    cwd: ROOT_DIR,
+    stdio: 'inherit',
+    env: { ...process.env, NODE_ENV: 'development' }
+  })
 }
 
 function startElectron(serverPort: number): ChildProcess {

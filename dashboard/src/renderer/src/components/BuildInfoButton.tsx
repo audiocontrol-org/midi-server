@@ -1,5 +1,5 @@
 interface BuildInfoButtonProps {
-  serial: string
+  serial?: string
   onClick: () => void
 }
 
@@ -14,7 +14,7 @@ export function BuildInfoButton({ serial, onClick }: BuildInfoButtonProps): Reac
                  transition-colors cursor-pointer"
       title="View build info and console logs"
     >
-      {serial}
+      {serial ?? 'Logs'}
     </button>
   )
 }

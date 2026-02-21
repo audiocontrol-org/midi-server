@@ -1,7 +1,7 @@
 import type { LogEntry, BuildInfo } from '@/platform'
 
 interface GitHubIssueButtonProps {
-  buildInfo: BuildInfo
+  buildInfo?: BuildInfo | null
   logs: LogEntry[]
 }
 
@@ -19,11 +19,17 @@ export function GitHubIssueButton({ buildInfo, logs }: GitHubIssueButtonProps): 
       .map((log) => `[${formatTimestamp(log.timestamp)}] ${log.message}`)
       .join('\n')
 
+    const buildLines = buildInfo
+      ? [
+          `- **Build Serial**: ${buildInfo.serial}`,
+          `- **Version**: ${buildInfo.version}`,
+          `- **Commit**: ${buildInfo.commit}`,
+          `- **Build Time**: ${buildInfo.buildTime}`
+        ].join('\n')
+      : '- **Build Info**: Not available'
+
     const body = `## Environment
-- **Build Serial**: ${buildInfo.serial}
-- **Version**: ${buildInfo.version}
-- **Commit**: ${buildInfo.commit}
-- **Build Time**: ${buildInfo.buildTime}
+${buildLines}
 - **Platform**: ${navigator.platform}
 - **User Agent**: ${navigator.userAgent}
 
