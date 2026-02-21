@@ -73,8 +73,15 @@ public:
     }
 
     void startServer() {
-        // Auto-open ports referenced by any routes persisted from last run
+        // Auto-open ports referenced by any routes persisted from last run.
+        // Retry after delays: CoreMIDI sometimes doesn't enumerate all devices immediately.
         autoOpenPortsForAllRoutes();
+        std::thread([this]() {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            autoOpenPortsForAllRoutes();
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            autoOpenPortsForAllRoutes();
+        }).detach();
 
         server = std::make_unique<httplib::Server>();
 
