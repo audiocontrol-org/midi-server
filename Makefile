@@ -1,4 +1,4 @@
-.PHONY: all build clean rebuild dist-macos dist-debian dist-source release
+.PHONY: all build clean rebuild dist-macos dist-debian dist-source release release-commit publish docker-build
 
 BUILD_DIR := build
 BUILD_TYPE := Release
@@ -13,16 +13,13 @@ VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
 ifeq ($(VERSION),)
   $(error VERSION file is empty. It must contain a valid version number.)
 endif
-INSTALL_LOCATION := /usr/local/bin
 
 # macOS installer (output from packaging/macos/build-installer.sh)
 MACOS_PKG_DIR := $(BUILD_DIR)/pkg
 MACOS_PKG_NAME := MidiServer-$(VERSION).pkg
 
-# Debian package configuration
-DEB_DIST_DIR := $(BUILD_DIR)/dist-debian
-DEB_PKG_NAME := midihttpserver_$(VERSION)_amd64.deb
-DEB_ARCH := amd64
+# Linux distribution (output from Docker build)
+LINUX_DIST_DIR := $(BUILD_DIR)/dist-linux
 
 # Release configuration
 RELEASE_DIR := $(BUILD_DIR)/release
@@ -45,6 +42,10 @@ clean:
 
 rebuild: clean build
 
+# Build the Linux Docker image (x86_64)
+docker-build:
+	docker build --platform linux/amd64 -t midi-server-linux-builder:ubuntu22.04-amd64 packaging/linux/
+
 # macOS distribution package (.pkg)
 dist-macos:
 	@if [ -z "$(RELEASE_SECRETS_PASSWORD)" ]; then \
@@ -54,29 +55,10 @@ dist-macos:
 	fi
 	cd dashboard && npm run build:mac:installer
 
-# Debian/Ubuntu distribution package (.deb)
-dist-debian: build
-	@echo "Creating Debian package..."
-	@rm -rf $(DEB_DIST_DIR)
-	@mkdir -p $(DEB_DIST_DIR)/package$(INSTALL_LOCATION)
-	@mkdir -p $(DEB_DIST_DIR)/package/DEBIAN
-	@cp $(BINARY) $(DEB_DIST_DIR)/package$(INSTALL_LOCATION)/
-	@chmod 755 $(DEB_DIST_DIR)/package$(INSTALL_LOCATION)/MidiHttpServer
-	@# Create control file
-	@echo "Package: midihttpserver" > $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Version: $(VERSION)" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Section: sound" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Priority: optional" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Architecture: $(DEB_ARCH)" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Depends: libasound2" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Maintainer: MIDI Server Team <support@example.com>" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo "Description: HTTP-to-MIDI bridge server" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo " A JUCE-based server that enables MIDI communication" >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@echo " (especially SysEx) from HTTP clients." >> $(DEB_DIST_DIR)/package/DEBIAN/control
-	@# Build the .deb package
-	@echo "Building .deb package..."
-	dpkg-deb --build --root-owner-group $(DEB_DIST_DIR)/package $(DEB_DIST_DIR)/$(DEB_PKG_NAME)
-	@echo "Debian package created: $(DEB_DIST_DIR)/$(DEB_PKG_NAME)"
+# Debian/Ubuntu distribution package (.deb) via Docker
+# Works on macOS by building inside a Linux container
+dist-debian:
+	./packaging/linux/docker-build.sh --deb-only
 
 # Source tarball
 dist-source:
@@ -85,16 +67,27 @@ dist-source:
 	git archive --format=tar.gz --prefix=midihttpserver-$(VERSION)/ HEAD > $(RELEASE_DIR)/$(SOURCE_TARBALL)
 	@echo "Source tarball created: $(RELEASE_DIR)/$(SOURCE_TARBALL)"
 
-# Release target - builds all distribution assets
-release: dist-macos dist-debian dist-source
-	@echo "Assembling release assets..."
-	@mkdir -p $(RELEASE_DIR)
-	@cp $(MACOS_PKG_DIR)/$(MACOS_PKG_NAME) $(RELEASE_DIR)/
-	@cp $(DEB_DIST_DIR)/$(DEB_PKG_NAME) $(RELEASE_DIR)/
-	@echo "Generating checksums..."
-	@cd $(RELEASE_DIR) && shasum -a 256 $(MACOS_PKG_NAME) $(DEB_PKG_NAME) $(SOURCE_TARBALL) > $(CHECKSUMS_FILE)
+# Create release commit and tag (assumes VERSION already updated)
+release-commit:
+	./packaging/macos/release-prepare.sh --version $(VERSION) --commit --tag
+
+# Release target - builds all platform packages, then commits and tags
+# Does NOT push or publish (use 'make publish' for that)
+release: dist-macos dist-debian dist-source release-commit
 	@echo ""
-	@echo "Release assets in $(RELEASE_DIR):"
-	@ls -la $(RELEASE_DIR)
+	@echo "=== Release $(VERSION) built and tagged ==="
 	@echo ""
-	@cat $(RELEASE_DIR)/$(CHECKSUMS_FILE)
+	@echo "Artifacts:"
+	@echo "  macOS:  $(MACOS_PKG_DIR)/$(MACOS_PKG_NAME)"
+	@echo "  Linux:  $(LINUX_DIST_DIR)/*.deb"
+	@echo "  Source: $(RELEASE_DIR)/$(SOURCE_TARBALL)"
+	@echo ""
+	@echo "Run 'make publish' to push and publish to GitHub"
+
+# Push and publish release to GitHub
+publish:
+	@echo "Pushing commits and tags..."
+	git push && git push --tags
+	@echo ""
+	@echo "Publishing release to GitHub..."
+	./packaging/macos/release-publish.sh --version $(VERSION)
