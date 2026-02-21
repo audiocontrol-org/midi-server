@@ -166,6 +166,45 @@ ASSETS+=("$CHECKSUMS_FILE")
 
 # Build gh release command
 TAG="v$VERSION"
+
+# Get repo info for download URLs
+if [ -n "${RELEASE_GH_REPO:-}" ]; then
+    GH_REPO="$RELEASE_GH_REPO"
+else
+    GH_REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null || echo "")
+fi
+
+# Generate release notes with download links if no custom notes provided
+if [ -z "$NOTES" ] && [ -z "$NOTES_FILE" ]; then
+    MACOS_PKG_NAME=$(basename "$MACOS_PKG_FILE")
+    LINUX_DEB_NAME=$(find "$LINUX_DIST_DIR" -maxdepth 1 -name "*.deb" -type f -printf '%f\n' 2>/dev/null | head -1 || basename "$(find "$LINUX_DIST_DIR" -maxdepth 1 -name "*.deb" -type f 2>/dev/null | head -1)" 2>/dev/null || echo "")
+    SOURCE_NAME=$(basename "$SOURCE_TARBALL")
+
+    DOWNLOAD_BASE="https://github.com/$GH_REPO/releases/download/$TAG"
+
+    GENERATED_NOTES="## Downloads
+
+| Platform | Package |
+|----------|---------|
+| **macOS** | [$MACOS_PKG_NAME]($DOWNLOAD_BASE/$MACOS_PKG_NAME) |"
+
+    if [ -n "$LINUX_DEB_NAME" ]; then
+        GENERATED_NOTES="$GENERATED_NOTES
+| **Linux (Debian/Ubuntu)** | [$LINUX_DEB_NAME]($DOWNLOAD_BASE/$LINUX_DEB_NAME) |"
+    fi
+
+    if [ -f "$SOURCE_TARBALL" ]; then
+        GENERATED_NOTES="$GENERATED_NOTES
+| **Source** | [$SOURCE_NAME]($DOWNLOAD_BASE/$SOURCE_NAME) |"
+    fi
+
+    GENERATED_NOTES="$GENERATED_NOTES
+
+## Checksums
+See [SHA256SUMS]($DOWNLOAD_BASE/SHA256SUMS) for verification.
+"
+fi
+
 CMD=(gh release create "$TAG")
 if [ -n "${RELEASE_GH_REPO:-}" ]; then
     CMD+=(-R "$RELEASE_GH_REPO")
@@ -186,6 +225,8 @@ if [ -n "$NOTES_FILE" ]; then
     CMD+=(--notes-file "$NOTES_FILE")
 elif [ -n "$NOTES" ]; then
     CMD+=(--notes "$NOTES")
+elif [ -n "$GENERATED_NOTES" ]; then
+    CMD+=(--generate-notes --notes "$GENERATED_NOTES")
 else
     CMD+=(--generate-notes)
 fi
