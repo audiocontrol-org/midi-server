@@ -12,6 +12,7 @@
 
 #include "httplib.h"
 
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
@@ -20,6 +21,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -51,6 +53,78 @@ struct MidiRoute {
 // Callback type for sending messages to local destination ports
 using LocalMessageForwarder = std::function<void(const std::string& destPortId,
                                                   const std::vector<uint8_t>& data)>;
+
+/**
+ * RemoteForwarder - Persistent-connection HTTP forwarder for a single remote host.
+ *
+ * Maintains one TCP connection and one worker thread per remote MIDI server.
+ * Messages are queued and sent in order, eliminating per-message TCP handshake
+ * overhead and preventing out-of-order delivery.
+ */
+class RemoteForwarder {
+public:
+    RemoteForwarder(const std::string& host, int port)
+        : client(host, port), running(true) {
+        client.set_connection_timeout(1, 0);
+        client.set_read_timeout(2, 0);
+        client.set_keep_alive(true);
+        workerThread = std::thread([this]() { run(); });
+    }
+
+    ~RemoteForwarder() {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            running = false;
+        }
+        cv.notify_one();
+        if (workerThread.joinable()) workerThread.join();
+    }
+
+    // Thread-safe: enqueue a message for delivery. Returns immediately.
+    void send(const std::string& path, const std::string& body) {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            pendingQueue.push({path, body});
+        }
+        cv.notify_one();
+    }
+
+private:
+    struct PendingMessage {
+        std::string path;
+        std::string body;
+    };
+
+    void run() {
+        while (true) {
+            PendingMessage msg;
+            {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                cv.wait(lock, [this] { return !pendingQueue.empty() || !running; });
+                if (!running && pendingQueue.empty()) return;
+                msg = std::move(pendingQueue.front());
+                pendingQueue.pop();
+            }
+            try {
+                auto res = client.Post(msg.path, msg.body, "application/json");
+                if (!res || res->status != 200) {
+                    std::cerr << "[RouteManager] Remote forward failed: "
+                              << (res ? std::to_string(res->status) : "connection failed")
+                              << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[RouteManager] Remote forward exception: " << e.what() << std::endl;
+            }
+        }
+    }
+
+    httplib::Client client;
+    std::queue<PendingMessage> pendingQueue;
+    std::mutex queueMutex;
+    std::condition_variable cv;
+    std::thread workerThread;
+    bool running;
+};
 
 class RouteManager {
 public:
@@ -283,6 +357,23 @@ private:
     std::mutex routesMutex;
     LocalMessageForwarder localForwarder;
 
+    // Persistent forwarder per remote host:port — created on first use
+    std::map<std::string, std::unique_ptr<RemoteForwarder>> forwarders;
+    std::mutex forwardersMutex;
+
+    RemoteForwarder& getForwarder(const std::string& host, int port) {
+        std::string key = host + ":" + std::to_string(port);
+        std::lock_guard<std::mutex> lock(forwardersMutex);
+        auto it = forwarders.find(key);
+        if (it == forwarders.end()) {
+            forwarders[key] = std::make_unique<RemoteForwarder>(host, port);
+            std::cout << "[RouteManager] Created persistent forwarder to "
+                      << host << ":" << port << std::endl;
+            return *forwarders[key];
+        }
+        return *it->second;
+    }
+
     void forwardToDestination(const MidiRoute& route,
                                const std::vector<uint8_t>& data,
                                const LocalMessageForwarder& forwarder) {
@@ -350,25 +441,8 @@ private:
         }
         body << "]}";
 
-        // Send HTTP request in a detached thread to avoid blocking MIDI callback
-        std::string bodyStr = body.str();
-        std::thread([host, port, path, bodyStr]() {
-            try {
-                httplib::Client client(host, port);
-                client.set_connection_timeout(1, 0);  // 1 second timeout
-                client.set_read_timeout(1, 0);
-
-                auto res = client.Post(path, bodyStr, "application/json");
-                if (!res || res->status != 200) {
-                    std::cerr << "[RouteManager] Remote forward failed to "
-                              << host << ":" << port << path
-                              << " - " << (res ? std::to_string(res->status) : "connection failed")
-                              << std::endl;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[RouteManager] Remote forward exception: " << e.what() << std::endl;
-            }
-        }).detach();
+        // Enqueue on the persistent per-destination forwarder (non-blocking)
+        getForwarder(host, port).send(path, body.str());
     }
 
     void saveToDiskUnlocked() {
