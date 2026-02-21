@@ -12,6 +12,8 @@ import { RoutingPanel } from '@/components/RoutingPanel'
 import { RouteGraph } from '@/components/RouteGraph'
 import { AddRouteModal } from '@/components/AddRouteModal'
 import { AddVirtualPortModal } from '@/components/AddVirtualPortModal'
+import { ServerTabs } from '@/components/ServerTabs'
+import { RemoteServerControl } from '@/components/RemoteServerControl'
 import { AppShell, PageHeader, ServerStatus, ServerActions, type TabId } from '@/components/layout'
 import '@/styles/layout.css'
 import {
@@ -55,6 +57,13 @@ export function Dashboard(): React.JSX.Element {
     Map<string, 'connected' | 'disconnected' | 'checking'>
   >(new Map())
 
+  // Selected server context for Global page
+  const [selectedServerUrl, setSelectedServerUrl] = useState<string | null>(null)
+  const [remoteServerPorts, setRemoteServerPorts] = useState<{
+    inputs: MidiPort[]
+    outputs: MidiPort[]
+  } | null>(null)
+
   // Routing state
   const [routes, setRoutes] = useState<Route[]>([])
   const [isAddRouteModalOpen, setIsAddRouteModalOpen] = useState(false)
@@ -81,6 +90,10 @@ export function Dashboard(): React.JSX.Element {
         const localServer = response.servers.find((s) => s.isLocal)
         if (localServer && !localServerUrl) {
           setLocalServerUrl(localServer.apiUrl)
+          // Auto-select local server initially
+          if (!selectedServerUrl) {
+            setSelectedServerUrl(localServer.apiUrl)
+          }
         }
       } catch (err) {
         console.error('Failed to fetch discovered servers:', err)
@@ -90,7 +103,7 @@ export function Dashboard(): React.JSX.Element {
     fetchServers()
     const interval = setInterval(fetchServers, DISCOVERY_POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [localServerUrl])
+  }, [localServerUrl, selectedServerUrl])
 
   // Check health of all discovered servers
   useEffect(() => {
@@ -203,6 +216,29 @@ export function Dashboard(): React.JSX.Element {
     return () => clearInterval(interval)
   }, [])
 
+  // Fetch ports from selected remote server
+  useEffect(() => {
+    // Skip if local server is selected (we use the local ports from useServerConnection)
+    if (!selectedServerUrl || selectedServerUrl === localServerUrl) {
+      setRemoteServerPorts(null)
+      return
+    }
+
+    const fetchRemotePorts = async (): Promise<void> => {
+      try {
+        const remotePorts = await apiClientRef.current.getRemoteServerPorts(selectedServerUrl)
+        setRemoteServerPorts(remotePorts)
+      } catch (err) {
+        console.error('Failed to fetch remote server ports:', err)
+        setRemoteServerPorts(null)
+      }
+    }
+
+    fetchRemotePorts()
+    const interval = setInterval(fetchRemotePorts, 5000)
+    return () => clearInterval(interval)
+  }, [selectedServerUrl, localServerUrl])
+
   // Poll server process status
   useEffect(() => {
     if (!platform.canManageServer) return
@@ -250,6 +286,28 @@ export function Dashboard(): React.JSX.Element {
       platform.addLog(`Failed to stop server: ${message}`, 'error')
     }
   }, [platform, disconnect])
+
+  // Remote server control callbacks
+  const getRemoteServerStatus = useCallback(
+    (serverUrl: string) => apiClientRef.current.getRemoteServerStatus(serverUrl),
+    []
+  )
+
+  const startRemoteServer = useCallback(
+    (serverUrl: string) => apiClientRef.current.startRemoteServer(serverUrl),
+    []
+  )
+
+  const stopRemoteServer = useCallback(
+    (serverUrl: string) => apiClientRef.current.stopRemoteServer(serverUrl),
+    []
+  )
+
+  const handleSelectServer = useCallback((serverUrl: string) => {
+    setSelectedServerUrl(serverUrl)
+    // Clear port selection when switching servers
+    setSelectedPortId(null)
+  }, [])
 
   const handlePortClick = useCallback(
     async (port: MidiPort) => {
@@ -453,7 +511,7 @@ export function Dashboard(): React.JSX.Element {
   // ports appear as CoreMIDI Destinations (system MIDI outputs) — filter them from the
   // physical list by name to avoid showing each virtual port twice.
   const virtualPortNames = new Set(virtualPorts.map((vp) => vp.name))
-  const allPorts = {
+  const localPorts = {
     inputs: [
       ...(ports?.inputs ?? []).filter((p) => !virtualPortNames.has(p.name)),
       ...virtualPorts
@@ -477,6 +535,11 @@ export function Dashboard(): React.JSX.Element {
         }))
     ]
   }
+
+  // Server context for Global page
+  const isLocalServerSelected = selectedServerUrl === localServerUrl
+  const selectedServer = discoveredServers.find((s) => s.apiUrl === selectedServerUrl)
+  const displayPorts = isLocalServerSelected ? localPorts : (remoteServerPorts ?? { inputs: [], outputs: [] })
 
   // Header status content (simplified - details moved to Global page)
   const headerStatus = (
@@ -508,11 +571,11 @@ export function Dashboard(): React.JSX.Element {
               title="Global"
               subtitle={
                 status.connected
-                  ? `${serverProcess?.url ?? 'localhost'}${remoteServerCount > 0 ? ` · ${remoteServerCount} remote server${remoteServerCount !== 1 ? 's' : ''}` : ''}`
+                  ? `${discoveredServers.length} server${discoveredServers.length !== 1 ? 's' : ''} discovered`
                   : undefined
               }
               actions={
-                status.connected && (
+                status.connected && isLocalServerSelected && (
                   <button onClick={refresh} className="btn btn-sm">
                     Refresh
                   </button>
@@ -540,39 +603,67 @@ export function Dashboard(): React.JSX.Element {
                     <p className="text-red-500 mt-4 text-sm">{serverError}</p>
                   )}
                 </div>
-              ) : ports ? (
-                <div className="list-detail-grid">
-                  <div className="grid-2">
-                    <PortList
-                      title="MIDI Inputs"
-                      ports={allPorts.inputs}
-                      openPortIds={openPortIds}
-                      selectedPortId={selectedPortId}
-                      onPortClick={handlePortClick}
+              ) : (
+                <>
+                  {/* Server selector tabs */}
+                  {discoveredServers.length > 0 && (
+                    <ServerTabs
+                      servers={discoveredServers}
+                      selectedServerUrl={selectedServerUrl}
+                      localServerUrl={localServerUrl}
+                      onSelectServer={handleSelectServer}
+                      serverStatuses={serverStatuses}
                     />
-                    <PortList
-                      title="MIDI Outputs"
-                      ports={allPorts.outputs}
-                      openPortIds={openPortIds}
-                      selectedPortId={selectedPortId}
-                      onPortClick={handlePortClick}
-                    />
-                  </div>
-                  <div>
-                    {selectedPort ? (
-                      <PortDetail
-                        port={selectedPort}
-                        onClose={handleClosePort}
-                        onMessagesReceived={handleMessagesReceived}
+                  )}
+
+                  {/* Remote server control panel */}
+                  {!isLocalServerSelected && selectedServer && (
+                    <div className="mb-4">
+                      <RemoteServerControl
+                        serverUrl={selectedServer.apiUrl}
+                        serverName={selectedServer.serverName}
+                        connectionStatus={serverStatuses.get(selectedServer.apiUrl) ?? 'disconnected'}
+                        getStatus={getRemoteServerStatus}
+                        startServer={startRemoteServer}
+                        stopServer={stopRemoteServer}
                       />
-                    ) : (
-                      <div className="card text-center" style={{ padding: '3rem' }}>
-                        <p className="text-muted">Click a port to open it and view details</p>
-                      </div>
-                    )}
+                    </div>
+                  )}
+
+                  {/* Port lists */}
+                  <div className="list-detail-grid">
+                    <div className="grid-2">
+                      <PortList
+                        title="MIDI Inputs"
+                        ports={displayPorts.inputs}
+                        openPortIds={openPortIds}
+                        selectedPortId={selectedPortId}
+                        onPortClick={handlePortClick}
+                      />
+                      <PortList
+                        title="MIDI Outputs"
+                        ports={displayPorts.outputs}
+                        openPortIds={openPortIds}
+                        selectedPortId={selectedPortId}
+                        onPortClick={handlePortClick}
+                      />
+                    </div>
+                    <div>
+                      {selectedPort ? (
+                        <PortDetail
+                          port={selectedPort}
+                          onClose={handleClosePort}
+                          onMessagesReceived={handleMessagesReceived}
+                        />
+                      ) : (
+                        <div className="card text-center" style={{ padding: '3rem' }}>
+                          <p className="text-muted">Click a port to open it and view details</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                </>
+              )}
             </div>
           </>
         )
