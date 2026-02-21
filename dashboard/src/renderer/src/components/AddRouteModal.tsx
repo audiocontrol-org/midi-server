@@ -100,7 +100,11 @@ export function AddRouteModal({
     const server = servers.find((s) => s.apiUrl === sourceServer)
     if (server?.isLocal) {
       const virtualInputs = virtualPorts.filter((vp) => vp.type === 'input').map(virtualToMidiPort)
-      return [...physicalPorts, ...virtualInputs]
+      // Virtual output ports (CoreMIDI Sources) appear in the system MIDI input list —
+      // filter them out by name to avoid showing the same port twice.
+      const virtualNames = new Set(virtualPorts.map((vp) => vp.name))
+      const truePhysical = physicalPorts.filter((p) => !virtualNames.has(p.name))
+      return [...truePhysical, ...virtualInputs]
     }
 
     return physicalPorts
@@ -114,7 +118,11 @@ export function AddRouteModal({
     const server = servers.find((s) => s.apiUrl === destServer)
     if (server?.isLocal) {
       const virtualOutputs = virtualPorts.filter((vp) => vp.type === 'output').map(virtualToMidiPort)
-      return [...physicalPorts, ...virtualOutputs]
+      // Virtual input ports (CoreMIDI Destinations) appear in the system MIDI output list —
+      // filter them out by name to avoid showing the same port twice.
+      const virtualNames = new Set(virtualPorts.map((vp) => vp.name))
+      const truePhysical = physicalPorts.filter((p) => !virtualNames.has(p.name))
+      return [...truePhysical, ...virtualOutputs]
     }
 
     return physicalPorts
