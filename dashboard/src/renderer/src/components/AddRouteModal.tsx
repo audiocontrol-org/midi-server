@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { DiscoveredServer, RouteEndpoint, VirtualPortConfig } from '@/api/client'
 import type { MidiPort } from '@/types/api'
+import { usePlatform } from '@/hooks/usePlatform'
 
 interface ServerPorts {
   serverUrl: string
@@ -26,6 +27,7 @@ export function AddRouteModal({
   onSave,
   fetchServerPorts
 }: AddRouteModalProps): React.JSX.Element | null {
+  const platform = usePlatform()
   const [sourceServer, setSourceServer] = useState<string>('')
   const [sourcePort, setSourcePort] = useState<string>('')
   const [destServer, setDestServer] = useState<string>('')
@@ -64,6 +66,7 @@ export function AddRouteModal({
         })
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err)
+        platform.addLog(`[AddRouteModal] Failed to fetch ports for ${serverUrl}: ${error}`, 'error')
         setServerPorts((prev) => {
           const next = new Map(prev)
           next.set(serverUrl, { serverUrl, ports: null, loading: false, error })
