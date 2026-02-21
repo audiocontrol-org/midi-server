@@ -478,14 +478,12 @@ export function Dashboard(): React.JSX.Element {
     ]
   }
 
-  // Header status content
+  // Header status content (simplified - details moved to Global page)
   const headerStatus = (
     <>
       <ServerStatus
         isServerRunning={serverProcess?.running ?? false}
         isConnected={status.connected}
-        serverUrl={serverProcess?.url}
-        remoteServerCount={remoteServerCount}
       />
       <ServerActions
         isServerRunning={serverProcess?.running ?? false}
@@ -507,10 +505,10 @@ export function Dashboard(): React.JSX.Element {
         return (
           <>
             <PageHeader
-              title="MIDI Ports"
+              title="Global"
               subtitle={
                 status.connected
-                  ? `${allPorts.inputs.length} inputs, ${allPorts.outputs.length} outputs`
+                  ? `${serverProcess?.url ?? 'localhost'}${remoteServerCount > 0 ? ` · ${remoteServerCount} remote server${remoteServerCount !== 1 ? 's' : ''}` : ''}`
                   : undefined
               }
               actions={

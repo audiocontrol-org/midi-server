@@ -4,7 +4,6 @@
  * Compact status indicators for the site header showing:
  * - Local server status (running/stopped)
  * - MIDI connection status
- * - Remote server count
  */
 
 interface ServerStatusProps {
@@ -12,17 +11,11 @@ interface ServerStatusProps {
   isServerRunning: boolean
   /** Whether connected to the MIDI server API */
   isConnected: boolean
-  /** Server URL when running */
-  serverUrl?: string | null
-  /** Number of discovered remote servers */
-  remoteServerCount: number
 }
 
 export function ServerStatus({
   isServerRunning,
-  isConnected,
-  serverUrl,
-  remoteServerCount
+  isConnected
 }: ServerStatusProps): React.JSX.Element {
   const serverStatus = isServerRunning ? 'running' : 'stopped'
   const connectionStatus = isConnected ? 'connected' : 'disconnected'
@@ -33,9 +26,8 @@ export function ServerStatus({
       <div className="status-indicator" data-status={serverStatus}>
         <span className="status-dot" data-status={serverStatus} />
         <span className="status-label">
-          {isServerRunning ? 'Server Running' : 'Server Stopped'}
+          {isServerRunning ? 'Running' : 'Stopped'}
         </span>
-        {serverUrl && <span className="status-detail">{serverUrl}</span>}
       </div>
 
       {/* Connection status */}
@@ -43,14 +35,6 @@ export function ServerStatus({
         <span className="status-dot" data-status={connectionStatus} />
         <span className="status-label">{isConnected ? 'Connected' : 'Disconnected'}</span>
       </div>
-
-      {/* Remote servers */}
-      {remoteServerCount > 0 && (
-        <div className="status-indicator">
-          <span className="status-badge">{remoteServerCount}</span>
-          <span className="status-label">Remote {remoteServerCount === 1 ? 'Server' : 'Servers'}</span>
-        </div>
-      )}
     </div>
   )
 }
