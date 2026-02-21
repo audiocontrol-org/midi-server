@@ -8,9 +8,9 @@ BINARY := $(BUILD_DIR)/MidiHttpServer_artefacts/$(BUILD_TYPE)/MidiHttpServer
 VERSION := 1.0.0
 INSTALL_LOCATION := /usr/local/bin
 
-# macOS installer configuration
-MACOS_DIST_DIR := $(BUILD_DIR)/dist-macos
-MACOS_PKG_NAME := MidiHttpServer-$(VERSION).pkg
+# macOS installer (output from packaging/macos/build-installer.sh)
+MACOS_PKG_DIR := $(BUILD_DIR)/pkg
+MACOS_PKG_NAME := MidiServer-$(VERSION).pkg
 
 # Debian package configuration
 DEB_DIST_DIR := $(BUILD_DIR)/dist-debian
@@ -21,11 +21,6 @@ DEB_ARCH := amd64
 RELEASE_DIR := $(BUILD_DIR)/release
 SOURCE_TARBALL := midihttpserver-$(VERSION)-source.tar.gz
 CHECKSUMS_FILE := SHA256SUMS
-
-# Signing identities (set via environment or override on command line)
-# Example: make dist-macos APP_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAM_ID)"
-APP_SIGNING_IDENTITY ?= $(CODESIGN_IDENTITY)
-INSTALLER_SIGNING_IDENTITY ?= $(PRODUCTSIGN_IDENTITY)
 
 # Detect CPU count for parallel builds
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -44,40 +39,13 @@ clean:
 rebuild: clean build
 
 # macOS distribution package (.pkg)
-dist-macos: build
-	@echo "Creating macOS installer..."
-	@mkdir -p $(MACOS_DIST_DIR)/payload$(INSTALL_LOCATION)
-	@cp $(BINARY) $(MACOS_DIST_DIR)/payload$(INSTALL_LOCATION)/
-	@# Sign the binary if identity is provided
-	@if [ -n "$(APP_SIGNING_IDENTITY)" ]; then \
-		echo "Signing binary with: $(APP_SIGNING_IDENTITY)"; \
-		codesign --force --options runtime --timestamp \
-			--sign "$(APP_SIGNING_IDENTITY)" \
-			$(MACOS_DIST_DIR)/payload$(INSTALL_LOCATION)/MidiHttpServer; \
-	else \
-		echo "Warning: APP_SIGNING_IDENTITY not set, skipping binary signing"; \
+dist-macos:
+	@if [ -z "$(RELEASE_SECRETS_PASSWORD)" ]; then \
+		echo "Error: RELEASE_SECRETS_PASSWORD must be set for macOS signing"; \
+		echo "This password decrypts the signing credentials in packaging/macos/"; \
+		exit 1; \
 	fi
-	@# Build the package
-	@echo "Building package..."
-	pkgbuild \
-		--root $(MACOS_DIST_DIR)/payload \
-		--identifier com.midiserver.httpserver \
-		--version $(VERSION) \
-		--install-location / \
-		$(MACOS_DIST_DIR)/unsigned.pkg
-	@# Sign the installer if identity is provided
-	@if [ -n "$(INSTALLER_SIGNING_IDENTITY)" ]; then \
-		echo "Signing installer with: $(INSTALLER_SIGNING_IDENTITY)"; \
-		productsign --timestamp \
-			--sign "$(INSTALLER_SIGNING_IDENTITY)" \
-			$(MACOS_DIST_DIR)/unsigned.pkg \
-			$(MACOS_DIST_DIR)/$(MACOS_PKG_NAME); \
-		rm $(MACOS_DIST_DIR)/unsigned.pkg; \
-	else \
-		echo "Warning: INSTALLER_SIGNING_IDENTITY not set, skipping installer signing"; \
-		mv $(MACOS_DIST_DIR)/unsigned.pkg $(MACOS_DIST_DIR)/$(MACOS_PKG_NAME); \
-	fi
-	@echo "Installer created: $(MACOS_DIST_DIR)/$(MACOS_PKG_NAME)"
+	cd dashboard && npm run build:mac:installer
 
 # Debian/Ubuntu distribution package (.deb)
 dist-debian: build
@@ -114,7 +82,7 @@ dist-source:
 release: dist-macos dist-debian dist-source
 	@echo "Assembling release assets..."
 	@mkdir -p $(RELEASE_DIR)
-	@cp $(MACOS_DIST_DIR)/$(MACOS_PKG_NAME) $(RELEASE_DIR)/
+	@cp $(MACOS_PKG_DIR)/$(MACOS_PKG_NAME) $(RELEASE_DIR)/
 	@cp $(DEB_DIST_DIR)/$(DEB_PKG_NAME) $(RELEASE_DIR)/
 	@echo "Generating checksums..."
 	@cd $(RELEASE_DIR) && shasum -a 256 $(MACOS_PKG_NAME) $(DEB_PKG_NAME) $(SOURCE_TARBALL) > $(CHECKSUMS_FILE)
