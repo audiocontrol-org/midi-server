@@ -74,7 +74,24 @@ public:
     }
 
     void sendMessage(const std::vector<uint8_t>& data) {
-        if (!output) return;
+        std::cout << "[MidiPort] sendMessage() portId=" << portId
+                  << " output=" << (output ? "valid" : "NULL")
+                  << " bytes=" << data.size();
+        if (!data.empty()) {
+            std::cout << " [";
+            for (size_t i = 0; i < std::min(data.size(), (size_t)6); i++) {
+                if (i > 0) std::cout << " ";
+                std::cout << std::hex << (int)data[i];
+            }
+            if (data.size() > 6) std::cout << "...";
+            std::cout << "]" << std::dec;
+        }
+        std::cout << std::endl;
+
+        if (!output) {
+            std::cerr << "[MidiPort] Cannot send: output is NULL\n";
+            return;
+        }
 
         if (data.empty()) {
             std::cerr << "Warning: Attempted to send empty MIDI message\n";
@@ -96,6 +113,7 @@ public:
                         (int)data.size() - 2  // Exclude F0 and F7
                     )
                 );
+                std::cout << "[MidiPort] SysEx sent (" << data.size() << " bytes)\n";
             }
         } else if (data.size() >= 1 && data.size() <= 3) {
             // Valid short MIDI message (1-3 bytes)
