@@ -5,7 +5,7 @@ import { ConsoleLogViewer } from '@/components/ConsoleLogViewer'
 import { GitHubIssueButton } from '@/components/GitHubIssueButton'
 
 interface BuildInfoModalProps {
-  buildInfo: BuildInfo
+  buildInfo?: BuildInfo | null
   isOpen: boolean
   onClose: () => void
 }
@@ -51,28 +51,30 @@ export function BuildInfoModal({
           </button>
         </div>
 
-        <div className="p-4 border-b border-gray-700 bg-gray-800/50">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="text-gray-500 block">Version</span>
-              <span className="text-white font-mono">{buildInfo.version}</span>
-            </div>
-            <div>
-              <span className="text-gray-500 block">Commit</span>
-              <span className="text-white font-mono">{buildInfo.commit}</span>
-            </div>
-            <div>
-              <span className="text-gray-500 block">Build Time</span>
-              <span className="text-white font-mono text-xs">
-                {new Date(buildInfo.buildTime).toLocaleString()}
-              </span>
-            </div>
-            <div>
-              <span className="text-gray-500 block">Serial</span>
-              <span className="text-white font-mono text-xs">{buildInfo.serial}</span>
+        {buildInfo && (
+          <div className="p-4 border-b border-gray-700 bg-gray-800/50">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <span className="text-gray-500 block">Version</span>
+                <span className="text-white font-mono">{buildInfo.version}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Commit</span>
+                <span className="text-white font-mono">{buildInfo.commit}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Build Time</span>
+                <span className="text-white font-mono text-xs">
+                  {new Date(buildInfo.buildTime).toLocaleString()}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Serial</span>
+                <span className="text-white font-mono text-xs">{buildInfo.serial}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="flex-1 p-4 min-h-0 overflow-hidden">
           <ConsoleLogViewer

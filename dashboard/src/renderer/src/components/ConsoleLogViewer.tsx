@@ -5,7 +5,7 @@ import type { LogFilters } from '@/hooks/useConsoleLogs'
 interface ConsoleLogViewerProps {
   logs: LogEntry[]
   filters: LogFilters
-  buildInfo: BuildInfo
+  buildInfo?: BuildInfo | null
   onToggleFilter: (severity: LogSeverity) => void
   onClear: () => void
 }
@@ -72,16 +72,17 @@ export function ConsoleLogViewer({
   }
 
   const copyToClipboard = async (): Promise<void> => {
-    const header = [
-      '=== MIDI Server Dashboard Logs ===',
-      `Version: ${buildInfo.version}`,
-      `Commit: ${buildInfo.commit}`,
-      `Build Time: ${buildInfo.buildTime}`,
-      `Serial: ${buildInfo.serial}`,
-      `Copied: ${new Date().toISOString()}`,
-      '================================',
-      ''
-    ].join('\n')
+    const headerLines = ['=== MIDI Server Dashboard Logs ===']
+    if (buildInfo) {
+      headerLines.push(
+        `Version: ${buildInfo.version}`,
+        `Commit: ${buildInfo.commit}`,
+        `Build Time: ${buildInfo.buildTime}`,
+        `Serial: ${buildInfo.serial}`
+      )
+    }
+    headerLines.push(`Copied: ${new Date().toISOString()}`, '================================', '')
+    const header = headerLines.join('\n')
 
     const logText = logs
       .map(

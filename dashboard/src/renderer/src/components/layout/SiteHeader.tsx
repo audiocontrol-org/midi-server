@@ -16,7 +16,7 @@ interface Tab {
 }
 
 const tabs: Tab[] = [
-  { id: 'ports', label: 'Ports' },
+  { id: 'ports', label: 'Global' },
   { id: 'routes', label: 'Routes' },
   { id: 'graph', label: 'Graph' }
 ]
