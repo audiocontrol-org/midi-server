@@ -504,7 +504,6 @@ export function Dashboard(): React.JSX.Element {
   const openPortIds = new Set(openPorts.keys())
   const hasUpdateAvailable =
     update.status?.phase === 'available' || update.status?.phase === 'downloaded'
-  const remoteServerCount = discoveredServers.filter((s) => !s.isLocal).length
 
   // Merge virtual ports into the ports lists for the Ports tab.
   // Virtual output ports appear as CoreMIDI Sources (system MIDI inputs) and virtual input
