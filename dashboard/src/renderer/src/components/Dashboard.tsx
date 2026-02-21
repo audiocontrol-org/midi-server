@@ -441,10 +441,14 @@ export function Dashboard(): React.JSX.Element {
     update.status?.phase === 'available' || update.status?.phase === 'downloaded'
   const remoteServerCount = discoveredServers.filter((s) => !s.isLocal).length
 
-  // Merge virtual ports into the ports lists for the Ports tab
+  // Merge virtual ports into the ports lists for the Ports tab.
+  // Virtual output ports appear as CoreMIDI Sources (system MIDI inputs) and virtual input
+  // ports appear as CoreMIDI Destinations (system MIDI outputs) — filter them from the
+  // physical list by name to avoid showing each virtual port twice.
+  const virtualPortNames = new Set(virtualPorts.map((vp) => vp.name))
   const allPorts = {
     inputs: [
-      ...(ports?.inputs ?? []),
+      ...(ports?.inputs ?? []).filter((p) => !virtualPortNames.has(p.name)),
       ...virtualPorts
         .filter((vp) => vp.type === 'input')
         .map((vp) => ({
@@ -455,7 +459,7 @@ export function Dashboard(): React.JSX.Element {
         }))
     ],
     outputs: [
-      ...(ports?.outputs ?? []),
+      ...(ports?.outputs ?? []).filter((p) => !virtualPortNames.has(p.name)),
       ...virtualPorts
         .filter((vp) => vp.type === 'output')
         .map((vp) => ({
