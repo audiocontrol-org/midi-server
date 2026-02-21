@@ -36,6 +36,17 @@ export class ApiServer {
     this.logBuffer.subscribe((entry) => {
       this.broadcastLogEntry(entry)
     })
+
+    // Update discovery service and recreate virtual ports when MIDI server port changes
+    this.processManager.onPortChange((port) => {
+      if (this.discovery) {
+        this.discovery.setMidiServerPort(port)
+      }
+      // Also update the config so new services get the right port
+      this.config.midiServerPort = port
+      // Recreate virtual ports now that MIDI server is running
+      this.recreateVirtualPorts()
+    })
   }
 
   setBinaryPath(path: string): void {
@@ -88,13 +99,22 @@ export class ApiServer {
 
   private initializeRoutingServices(localUrl: string): void {
     this.virtualPortsStorage = new VirtualPortsStorage()
-    this.discovery = new DiscoveryService(localUrl, this.config.midiServerPort)
+
+    // Get the current MIDI server port - prefer the running server's port over config
+    const currentStatus = this.processManager.getStatus()
+    const midiServerPort = currentStatus.port ?? this.config.midiServerPort
+    if (midiServerPort !== this.config.midiServerPort) {
+      console.log(`[ApiServer] Using running MIDI server port: ${midiServerPort}`)
+      this.config.midiServerPort = midiServerPort
+    }
+
+    this.discovery = new DiscoveryService(localUrl, midiServerPort)
 
     this.routingHandlers = createRoutingHandlers({
       discovery: this.discovery,
       virtualPorts: this.virtualPortsStorage,
       localServerUrl: localUrl,
-      localMidiServerPort: this.config.midiServerPort
+      localMidiServerPort: midiServerPort
     })
 
     // Recreate persisted virtual ports in C++ binary
@@ -311,6 +331,40 @@ export class ApiServer {
         const serverStopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
         if (serverStopMatch && req.method === 'POST') {
           return await this.routingHandlers.handleRemoteServerStop(res, serverStopMatch[1])
+        }
+
+        // Remote server route management
+        const serverRoutesMatch = path.match(/^\/api\/servers\/([^/]+)\/routes$/)
+        if (serverRoutesMatch) {
+          if (req.method === 'GET') {
+            return await this.routingHandlers.handleRemoteServerGetRoutes(res, serverRoutesMatch[1])
+          }
+          if (req.method === 'POST') {
+            return await this.routingHandlers.handleRemoteServerCreateRoute(
+              req,
+              res,
+              serverRoutesMatch[1]
+            )
+          }
+        }
+
+        const serverRouteMatch = path.match(/^\/api\/servers\/([^/]+)\/routes\/([^/]+)$/)
+        if (serverRouteMatch) {
+          if (req.method === 'PUT') {
+            return await this.routingHandlers.handleRemoteServerUpdateRoute(
+              req,
+              res,
+              serverRouteMatch[1],
+              serverRouteMatch[2]
+            )
+          }
+          if (req.method === 'DELETE') {
+            return await this.routingHandlers.handleRemoteServerDeleteRoute(
+              res,
+              serverRouteMatch[1],
+              serverRouteMatch[2]
+            )
+          }
         }
       }
 

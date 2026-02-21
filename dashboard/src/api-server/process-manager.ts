@@ -2,17 +2,34 @@ import { spawn, ChildProcess } from 'child_process'
 import type { ServerStatus } from './types'
 import { LogBuffer, parseSeverityFromMessage } from './log-buffer'
 
+export type PortChangeCallback = (port: number) => void
+
 export class ProcessManager {
   private serverProcess: ChildProcess | null = null
   private serverPort: number | null = null
   private binaryPath: string
   private portResolve: ((port: number) => void) | null = null
+  private portChangeCallbacks: PortChangeCallback[] = []
 
   constructor(
     binaryPath: string,
     private logBuffer: LogBuffer
   ) {
     this.binaryPath = binaryPath
+  }
+
+  onPortChange(callback: PortChangeCallback): void {
+    this.portChangeCallbacks.push(callback)
+  }
+
+  private notifyPortChange(port: number): void {
+    for (const callback of this.portChangeCallbacks) {
+      try {
+        callback(port)
+      } catch (err) {
+        console.error('[ProcessManager] Port change callback error:', err)
+      }
+    }
   }
 
   setBinaryPath(path: string): void {
@@ -58,6 +75,7 @@ export class ProcessManager {
       if (portMatch) {
         const actualPort = parseInt(portMatch[1], 10)
         this.serverPort = actualPort
+        this.notifyPortChange(actualPort)
         if (this.portResolve) {
           this.portResolve(actualPort)
           this.portResolve = null

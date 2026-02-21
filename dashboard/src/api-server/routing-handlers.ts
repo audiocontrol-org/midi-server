@@ -363,6 +363,165 @@ export function createRoutingHandlers(services: RoutingServices) {
     }
   }
 
+  // Remote server route management - proxy to remote server's MIDI server
+  async function handleRemoteServerGetRoutes(res: ServerResponse, encodedUrl: string): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+      // Get MIDI server port from the remote API server
+      const statusResponse = await fetch(`${serverUrl}/api/status`)
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to get remote server status: HTTP ${statusResponse.status}`)
+      }
+      const status = await statusResponse.json()
+      const midiServerPort = status.port
+      if (!midiServerPort) {
+        throw new Error('Remote MIDI server not running')
+      }
+
+      // Extract host from serverUrl and build MIDI server URL
+      const url = new URL(serverUrl)
+      const midiServerUrl = `http://${url.hostname}:${midiServerPort}`
+
+      const routesResponse = await fetch(`${midiServerUrl}/routes`)
+      if (!routesResponse.ok) {
+        throw new Error(`HTTP ${routesResponse.status}`)
+      }
+      const routes = await routesResponse.json()
+      sendJson(res, routes)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to get remote routes: ${message}`, 502)
+    }
+  }
+
+  async function handleRemoteServerCreateRoute(
+    req: IncomingMessage,
+    res: ServerResponse,
+    encodedUrl: string
+  ): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+      const body = await readJsonBody<{
+        enabled: boolean
+        source: { serverUrl: string; portId: string; portName: string }
+        destination: { serverUrl: string; portId: string; portName: string }
+      }>(req)
+
+      if (!body) {
+        sendError(res, 'Missing request body')
+        return
+      }
+
+      // Get MIDI server port from the remote API server
+      const statusResponse = await fetch(`${serverUrl}/api/status`)
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to get remote server status: HTTP ${statusResponse.status}`)
+      }
+      const status = await statusResponse.json()
+      const midiServerPort = status.port
+      if (!midiServerPort) {
+        throw new Error('Remote MIDI server not running')
+      }
+
+      // Extract host from serverUrl and build MIDI server URL
+      const url = new URL(serverUrl)
+      const midiServerUrl = `http://${url.hostname}:${midiServerPort}`
+
+      const routeResponse = await fetch(`${midiServerUrl}/routes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      if (!routeResponse.ok) {
+        const errorBody = await routeResponse.text()
+        throw new Error(errorBody || `HTTP ${routeResponse.status}`)
+      }
+      const route = await routeResponse.json()
+      sendJson(res, route, 201)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to create remote route: ${message}`, 502)
+    }
+  }
+
+  async function handleRemoteServerUpdateRoute(
+    req: IncomingMessage,
+    res: ServerResponse,
+    encodedUrl: string,
+    routeId: string
+  ): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+      const body = await readJsonBody<{ enabled?: boolean }>(req)
+
+      // Get MIDI server port from the remote API server
+      const statusResponse = await fetch(`${serverUrl}/api/status`)
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to get remote server status: HTTP ${statusResponse.status}`)
+      }
+      const status = await statusResponse.json()
+      const midiServerPort = status.port
+      if (!midiServerPort) {
+        throw new Error('Remote MIDI server not running')
+      }
+
+      // Extract host from serverUrl and build MIDI server URL
+      const url = new URL(serverUrl)
+      const midiServerUrl = `http://${url.hostname}:${midiServerPort}`
+
+      const routeResponse = await fetch(`${midiServerUrl}/routes/${routeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      if (!routeResponse.ok) {
+        throw new Error(`HTTP ${routeResponse.status}`)
+      }
+      const result = await routeResponse.json()
+      sendJson(res, result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to update remote route: ${message}`, 502)
+    }
+  }
+
+  async function handleRemoteServerDeleteRoute(
+    res: ServerResponse,
+    encodedUrl: string,
+    routeId: string
+  ): Promise<void> {
+    try {
+      const serverUrl = decodeURIComponent(encodedUrl)
+
+      // Get MIDI server port from the remote API server
+      const statusResponse = await fetch(`${serverUrl}/api/status`)
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to get remote server status: HTTP ${statusResponse.status}`)
+      }
+      const status = await statusResponse.json()
+      const midiServerPort = status.port
+      if (!midiServerPort) {
+        throw new Error('Remote MIDI server not running')
+      }
+
+      // Extract host from serverUrl and build MIDI server URL
+      const url = new URL(serverUrl)
+      const midiServerUrl = `http://${url.hostname}:${midiServerPort}`
+
+      const routeResponse = await fetch(`${midiServerUrl}/routes/${routeId}`, {
+        method: 'DELETE'
+      })
+      if (!routeResponse.ok) {
+        throw new Error(`HTTP ${routeResponse.status}`)
+      }
+      const result = await routeResponse.json()
+      sendJson(res, result)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sendError(res, `Failed to delete remote route: ${message}`, 502)
+    }
+  }
+
   return {
     handleDiscoveryServers,
     handleDiscoveryStatus,
@@ -380,7 +539,11 @@ export function createRoutingHandlers(services: RoutingServices) {
     handleRemoteServerStop,
     handleGetVirtualPorts,
     handleCreateVirtualPort,
-    handleDeleteVirtualPort
+    handleDeleteVirtualPort,
+    handleRemoteServerGetRoutes,
+    handleRemoteServerCreateRoute,
+    handleRemoteServerUpdateRoute,
+    handleRemoteServerDeleteRoute
   }
 }
 

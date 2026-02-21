@@ -139,21 +139,50 @@ export function Dashboard(): React.JSX.Element {
     return () => clearInterval(interval)
   }, [discoveredServers, status.connected, localServerUrl])
 
-  // Fetch routes
+  // Fetch routes from all discovered servers
   useEffect(() => {
-    const fetchRoutes = async (): Promise<void> => {
+    const fetchAllRoutes = async (): Promise<void> => {
       try {
-        const response = await apiClientRef.current.getRoutes()
-        setRoutes(response.routes)
+        const allRoutes: Route[] = []
+
+        // Fetch local routes
+        try {
+          const localResponse = await apiClientRef.current.getRoutes()
+          const localRoutes = localResponse.routes.map((r) => ({
+            ...r,
+            ownerServer: 'local'
+          }))
+          allRoutes.push(...localRoutes)
+        } catch (err) {
+          console.error('Failed to fetch local routes:', err)
+        }
+
+        // Fetch routes from each discovered remote server
+        for (const server of discoveredServers) {
+          if (server.isLocal) continue
+          try {
+            const remoteResponse = await apiClientRef.current.getRemoteServerRoutes(server.apiUrl)
+            const remoteRoutes = remoteResponse.routes.map((r) => ({
+              ...r,
+              ownerServer: server.apiUrl
+            }))
+            allRoutes.push(...remoteRoutes)
+          } catch (err) {
+            // Remote server may be offline, just skip
+            console.debug(`Failed to fetch routes from ${server.serverName}:`, err)
+          }
+        }
+
+        setRoutes(allRoutes)
       } catch (err) {
         console.error('Failed to fetch routes:', err)
       }
     }
 
-    fetchRoutes()
-    const interval = setInterval(fetchRoutes, 5000)
+    fetchAllRoutes()
+    const interval = setInterval(fetchAllRoutes, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [discoveredServers])
 
   // Fetch virtual ports
   useEffect(() => {
@@ -225,6 +254,21 @@ export function Dashboard(): React.JSX.Element {
       }
 
       try {
+        // Virtual ports are already "open" - they exist in the C++ server
+        // We just need to track them in our UI state
+        if (port.isVirtual) {
+          const newPort: OpenPort = {
+            portId,
+            name: port.name,
+            type: port.type,
+            messages: []
+          }
+          setOpenPorts((prev) => new Map(prev).set(portId, newPort))
+          setSelectedPortId(portId)
+          return
+        }
+
+        // Physical ports need to be opened via the API
         await clientRef.current.openPort(portId, port.name, port.type)
         const newPort: OpenPort = {
           portId,
@@ -245,7 +289,11 @@ export function Dashboard(): React.JSX.Element {
     if (!selectedPortId) return
 
     try {
-      await clientRef.current.closePort(selectedPortId)
+      // Virtual ports don't need to be closed via API - just deselect
+      const isVirtual = selectedPortId.startsWith('virtual:')
+      if (!isVirtual) {
+        await clientRef.current.closePort(selectedPortId)
+      }
       setOpenPorts((prev) => {
         const next = new Map(prev)
         next.delete(selectedPortId)
@@ -278,37 +326,79 @@ export function Dashboard(): React.JSX.Element {
 
   const handleToggleRoute = useCallback(async (routeId: string, enabled: boolean) => {
     try {
-      await apiClientRef.current.updateRoute(routeId, { enabled })
+      // Find the route to determine its owner
+      const route = routes.find((r) => r.id === routeId)
+      if (!route) return
+
+      if (route.ownerServer && route.ownerServer !== 'local') {
+        // Route is on a remote server
+        await apiClientRef.current.updateRemoteServerRoute(route.ownerServer, routeId, { enabled })
+      } else {
+        // Route is on local server
+        await apiClientRef.current.updateRoute(routeId, { enabled })
+      }
+
       setRoutes((prev) =>
-        prev.map((route) => (route.id === routeId ? { ...route, enabled } : route))
+        prev.map((r) => (r.id === routeId ? { ...r, enabled } : r))
       )
     } catch (err) {
       console.error('Failed to toggle route:', err)
     }
-  }, [])
+  }, [routes])
 
   const handleDeleteRoute = useCallback(async (routeId: string) => {
     try {
-      await apiClientRef.current.deleteRoute(routeId)
-      setRoutes((prev) => prev.filter((route) => route.id !== routeId))
+      // Find the route to determine its owner
+      const route = routes.find((r) => r.id === routeId)
+      if (!route) return
+
+      if (route.ownerServer && route.ownerServer !== 'local') {
+        // Route is on a remote server
+        await apiClientRef.current.deleteRemoteServerRoute(route.ownerServer, routeId)
+      } else {
+        // Route is on local server
+        await apiClientRef.current.deleteRoute(routeId)
+      }
+
+      setRoutes((prev) => prev.filter((r) => r.id !== routeId))
     } catch (err) {
       console.error('Failed to delete route:', err)
     }
-  }, [])
+  }, [routes])
 
-  const handleAddRoute = useCallback(async (source: RouteEndpoint, destination: RouteEndpoint) => {
-    try {
-      const response = await apiClientRef.current.createRoute({
-        enabled: true,
-        source,
-        destination
-      })
-      setRoutes((prev) => [...prev, response.route])
-      setIsAddRouteModalOpen(false)
-    } catch (err) {
-      console.error('Failed to create route:', err)
-    }
-  }, [])
+  const handleAddRoute = useCallback(
+    async (source: RouteEndpoint, destination: RouteEndpoint, sourceServerApiUrl: string) => {
+      try {
+        // Determine if the source is on a remote server
+        const sourceServer = discoveredServers.find((s) => s.apiUrl === sourceServerApiUrl)
+        const isRemoteSource = sourceServer && !sourceServer.isLocal
+
+        const routeData = {
+          enabled: true,
+          source,
+          destination
+        }
+
+        let response: { route: Route }
+        if (isRemoteSource) {
+          // Create route on the remote server where the source port lives
+          response = await apiClientRef.current.createRemoteServerRoute(sourceServerApiUrl, routeData)
+          // Tag with owner server for UI
+          response.route.ownerServer = sourceServerApiUrl
+        } else {
+          // Create route on local server
+          response = await apiClientRef.current.createRoute(routeData)
+          response.route.ownerServer = 'local'
+        }
+
+        setRoutes((prev) => [...prev, response.route])
+        setIsAddRouteModalOpen(false)
+      } catch (err) {
+        console.error('Failed to create route:', err)
+      }
+    },
+    [discoveredServers]
+  )
 
   const handleAddVirtualPort = useCallback(async (name: string, type: 'input' | 'output') => {
     try {
@@ -351,6 +441,32 @@ export function Dashboard(): React.JSX.Element {
     update.status?.phase === 'available' || update.status?.phase === 'downloaded'
   const remoteServerCount = discoveredServers.filter((s) => !s.isLocal).length
 
+  // Merge virtual ports into the ports lists for the Ports tab
+  const allPorts = {
+    inputs: [
+      ...(ports?.inputs ?? []),
+      ...virtualPorts
+        .filter((vp) => vp.type === 'input')
+        .map((vp) => ({
+          id: `virtual:${vp.id}`,
+          name: `🔌 ${vp.name}`,
+          type: 'input' as const,
+          isVirtual: true
+        }))
+    ],
+    outputs: [
+      ...(ports?.outputs ?? []),
+      ...virtualPorts
+        .filter((vp) => vp.type === 'output')
+        .map((vp) => ({
+          id: `virtual:${vp.id}`,
+          name: `🔌 ${vp.name}`,
+          type: 'output' as const,
+          isVirtual: true
+        }))
+    ]
+  }
+
   // Header status content
   const headerStatus = (
     <>
@@ -385,7 +501,7 @@ export function Dashboard(): React.JSX.Element {
               title="MIDI Ports"
               subtitle={
                 status.connected
-                  ? `${ports?.inputs.length ?? 0} inputs, ${ports?.outputs.length ?? 0} outputs`
+                  ? `${allPorts.inputs.length} inputs, ${allPorts.outputs.length} outputs`
                   : undefined
               }
               actions={
@@ -410,14 +526,14 @@ export function Dashboard(): React.JSX.Element {
                   <div className="grid-2">
                     <PortList
                       title="MIDI Inputs"
-                      ports={ports.inputs}
+                      ports={allPorts.inputs}
                       openPortIds={openPortIds}
                       selectedPortId={selectedPortId}
                       onPortClick={handlePortClick}
                     />
                     <PortList
                       title="MIDI Outputs"
-                      ports={ports.outputs}
+                      ports={allPorts.outputs}
                       openPortIds={openPortIds}
                       selectedPortId={selectedPortId}
                       onPortClick={handlePortClick}

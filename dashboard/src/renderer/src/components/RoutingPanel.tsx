@@ -28,6 +28,12 @@ export function RoutingPanel({
     return server?.serverName ?? serverUrl
   }
 
+  const getRouteOwnerName = (ownerServer: string | undefined): string | null => {
+    if (!ownerServer || ownerServer === 'local') return null
+    const server = servers.find((s) => s.apiUrl === ownerServer)
+    return server?.serverName ?? ownerServer
+  }
+
   const getStatusColor = (status: string): string => {
     switch (status) {
       case 'active':
@@ -113,6 +119,16 @@ export function RoutingPanel({
                 {route.status && route.status.messagesRouted > 0 && (
                   <span className="text-xs text-gray-500 flex-shrink-0">
                     {route.status.messagesRouted} msgs
+                  </span>
+                )}
+
+                {/* Remote owner indicator */}
+                {getRouteOwnerName(route.ownerServer) && (
+                  <span
+                    className="text-xs text-indigo-400 flex-shrink-0"
+                    title={`Route stored on ${getRouteOwnerName(route.ownerServer)}`}
+                  >
+                    @{getRouteOwnerName(route.ownerServer)}
                   </span>
                 )}
               </div>

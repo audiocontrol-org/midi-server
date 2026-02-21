@@ -9,6 +9,10 @@ interface PortListProps {
 }
 
 function generatePortId(port: MidiPort): string {
+  // For virtual ports, the id is already a string like "virtual:xyz"
+  if (port.isVirtual && typeof port.id === 'string') {
+    return port.id
+  }
   // Create a URL-safe port ID from name and type
   return `${port.type}-${port.id}`
 }
@@ -51,9 +55,11 @@ export function PortList({
                 }`}
               >
                 <span
-                  className={`w-2 h-2 rounded-full ${isOpen ? 'bg-green-400' : 'bg-gray-500'}`}
+                  className={`w-2 h-2 rounded-full ${isOpen ? 'bg-green-400' : port.isVirtual ? 'bg-purple-400' : 'bg-gray-500'}`}
                 />
-                <span className="font-mono text-sm text-gray-400">[{port.id}]</span>
+                <span className="font-mono text-sm text-gray-400">
+                  {port.isVirtual ? '[V]' : `[${port.id}]`}
+                </span>
                 <span className="flex-1 truncate" title={port.name}>{port.name}</span>
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded ${isOpen ? 'bg-green-800' : 'invisible'}`}

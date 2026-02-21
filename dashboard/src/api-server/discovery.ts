@@ -111,6 +111,21 @@ export class DiscoveryService extends EventEmitter<DiscoveryEvents> {
     return this.serverName
   }
 
+  setMidiServerPort(port: number): void {
+    if (port !== this.midiServerPort) {
+      console.log(`[Discovery] Updating MIDI server port: ${this.midiServerPort} -> ${port}`)
+      this.midiServerPort = port
+      // Broadcast immediately with updated port
+      if (this.running) {
+        this.broadcast()
+      }
+    }
+  }
+
+  getMidiServerPort(): number {
+    return this.midiServerPort
+  }
+
   private startBroadcasting(): void {
     // Broadcast immediately
     this.broadcast()

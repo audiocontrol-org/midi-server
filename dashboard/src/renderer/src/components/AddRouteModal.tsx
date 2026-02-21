@@ -14,7 +14,7 @@ interface AddRouteModalProps {
   servers: DiscoveredServer[]
   virtualPorts: VirtualPortConfig[]
   onClose: () => void
-  onSave: (source: RouteEndpoint, destination: RouteEndpoint) => void
+  onSave: (source: RouteEndpoint, destination: RouteEndpoint, sourceServerApiUrl: string) => void
   fetchServerPorts: (serverUrl: string) => Promise<{ inputs: MidiPort[]; outputs: MidiPort[] }>
 }
 
@@ -128,6 +128,18 @@ export function AddRouteModal({
     return `${port.type}-${port.id}`
   }
 
+  // Convert API URL to MIDI server URL for routing
+  const getMidiServerUrl = (server: DiscoveredServer | undefined): string => {
+    if (!server || server.isLocal) return 'local'
+    // Extract host from API URL and use MIDI server port
+    try {
+      const url = new URL(server.apiUrl)
+      return `http://${url.hostname}:${server.midiServerPort}`
+    } catch {
+      return server.apiUrl
+    }
+  }
+
   const handleSave = (): void => {
     const sourcePorts = getSourcePorts()
     const destPorts = getDestPorts()
@@ -139,19 +151,21 @@ export function AddRouteModal({
 
     if (!selectedSourcePort || !selectedDestPort) return
 
+    // Use MIDI server URL (not API URL) for routing - C++ RouteManager needs direct access
     const source: RouteEndpoint = {
-      serverUrl: selectedSourceServer?.isLocal ? 'local' : sourceServer,
+      serverUrl: getMidiServerUrl(selectedSourceServer),
       portId: sourcePort,
       portName: selectedSourcePort.name
     }
 
     const destination: RouteEndpoint = {
-      serverUrl: selectedDestServer?.isLocal ? 'local' : destServer,
+      serverUrl: getMidiServerUrl(selectedDestServer),
       portId: destPort,
       portName: selectedDestPort.name
     }
 
-    onSave(source, destination)
+    // Pass the source server's API URL so the route can be created on that server
+    onSave(source, destination, sourceServer)
   }
 
   const isValid = Boolean(sourceServer && sourcePort && destServer && destPort)
