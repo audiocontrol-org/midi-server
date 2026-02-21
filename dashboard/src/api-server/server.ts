@@ -46,6 +46,10 @@ export class ApiServer {
       this.config.midiServerPort = port
       // Recreate virtual ports now that MIDI server is running
       this.recreateVirtualPorts()
+      // Sync routes from peers now that C++ binary is running
+      if (this.routingHandlers) {
+        this.routingHandlers.syncRoutesFromPeers(port).catch(console.error)
+      }
     })
   }
 

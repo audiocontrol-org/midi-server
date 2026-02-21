@@ -66,11 +66,12 @@ public:
 
     std::string addRoute(const RouteEndpoint& source,
                          const RouteEndpoint& destination,
-                         bool enabled = true) {
+                         bool enabled = true,
+                         const std::string& prespecifiedId = "") {
         std::lock_guard<std::mutex> lock(routesMutex);
 
         MidiRoute route;
-        route.id = generateRouteId();
+        route.id = prespecifiedId.empty() ? generateRouteId() : prespecifiedId;
         route.source = source;
         route.destination = destination;
         route.enabled = enabled;

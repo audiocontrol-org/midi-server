@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http'
-import type { DiscoveryService } from './discovery'
+import type { DiscoveryService, DiscoveredServer } from './discovery'
 import type { VirtualPortsStorage } from './virtual-ports-storage'
+import type { MidiRoute } from './local-client'
 import { getMidiClient } from './client-factory'
 import { getLocalClient } from './local-client'
 
@@ -44,6 +45,115 @@ export function createRoutingHandlers(services: RoutingServices) {
       })
       req.on('error', reject)
     })
+  }
+
+  // Propagation helpers for cross-server route replication
+
+  function getMidiUrlForPeer(server: DiscoveredServer): string {
+    const url = new URL(server.apiUrl)
+    return `http://${url.hostname}:${server.midiServerPort}`
+  }
+
+  function buildLocalMidiUrl(): string {
+    const url = new URL(localServerUrl)
+    return `http://${url.hostname}:${localMidiServerPort}`
+  }
+
+  function resolveLocalUrls(route: MidiRoute, originMidiUrl: string): MidiRoute {
+    if (route.source.serverUrl === 'local' || route.source.serverUrl === '') {
+      route.source.serverUrl = originMidiUrl
+    }
+    if (route.destination.serverUrl === 'local' || route.destination.serverUrl === '') {
+      route.destination.serverUrl = originMidiUrl
+    }
+    return route
+  }
+
+  async function propagateRoute(
+    route: { id: string; enabled?: boolean; source?: MidiRoute['source']; destination?: MidiRoute['destination'] },
+    operation: 'create' | 'update' | 'delete',
+    excludeMidiUrl?: string
+  ): Promise<void> {
+    const peers = discovery.getServers().filter((s) => !s.isLocal && s.midiServerPort > 0)
+    const localMidiUrl = buildLocalMidiUrl()
+    const normalizedRoute = resolveLocalUrls(
+      JSON.parse(JSON.stringify(route)) as MidiRoute,
+      localMidiUrl
+    )
+
+    for (const peer of peers) {
+      const midiUrl = getMidiUrlForPeer(peer)
+      if (midiUrl === excludeMidiUrl) continue
+      if (operation === 'create') {
+        fetch(`${midiUrl}/routes`, {
+          method: 'POST',
+          body: JSON.stringify({
+            id: normalizedRoute.id,
+            enabled: normalizedRoute.enabled,
+            source: normalizedRoute.source,
+            destination: normalizedRoute.destination
+          }),
+          headers: { 'Content-Type': 'application/json' }
+        }).catch(() => { /* best effort */ })
+      } else if (operation === 'update') {
+        fetch(`${midiUrl}/routes/${normalizedRoute.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ enabled: normalizedRoute.enabled }),
+          headers: { 'Content-Type': 'application/json' }
+        }).catch(() => { /* best effort */ })
+      } else if (operation === 'delete') {
+        fetch(`${midiUrl}/routes/${normalizedRoute.id}`, {
+          method: 'DELETE'
+        }).catch(() => { /* best effort */ })
+      }
+    }
+  }
+
+  async function syncRoutesFromPeers(localMidiPort: number): Promise<void> {
+    const peers = discovery.getServers().filter((s) => !s.isLocal && s.midiServerPort > 0)
+    if (peers.length === 0) return
+
+    let localRoutes: MidiRoute[] = []
+    try {
+      const localRes = await fetch(`http://localhost:${localMidiPort}/routes`)
+      const data = (await localRes.json()) as { routes: MidiRoute[] }
+      localRoutes = data.routes
+    } catch {
+      return // Can't reach local MIDI binary, skip sync
+    }
+
+    const localIds = new Set(localRoutes.map((r) => r.id))
+
+    for (const peer of peers) {
+      try {
+        const midiUrl = getMidiUrlForPeer(peer)
+        const peerRes = await fetch(`${midiUrl}/routes`)
+        const data = (await peerRes.json()) as { routes: MidiRoute[] }
+
+        for (const route of data.routes) {
+          if (localIds.has(route.id)) continue
+
+          const normalized = resolveLocalUrls(
+            JSON.parse(JSON.stringify(route)) as MidiRoute,
+            midiUrl
+          )
+
+          await fetch(`http://localhost:${localMidiPort}/routes`, {
+            method: 'POST',
+            body: JSON.stringify({
+              id: normalized.id,
+              enabled: normalized.enabled,
+              source: normalized.source,
+              destination: normalized.destination
+            }),
+            headers: { 'Content-Type': 'application/json' }
+          })
+          localIds.add(normalized.id)
+        }
+      } catch {
+        /* best effort - continue with next peer */
+      }
+    }
   }
 
   // Discovery endpoints
@@ -110,6 +220,7 @@ export function createRoutingHandlers(services: RoutingServices) {
         destination: body.destination
       })
       sendJson(res, result, 201)
+      propagateRoute(result.route, 'create').catch(() => { /* best effort */ })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sendError(res, `Failed to create route: ${message}`, 502)
@@ -131,6 +242,7 @@ export function createRoutingHandlers(services: RoutingServices) {
       const client = getLocalClient(localMidiServerPort)
       const result = await client.updateRoute(routeId, body.enabled)
       sendJson(res, result)
+      propagateRoute({ id: routeId, enabled: body.enabled }, 'update').catch(() => { /* best effort */ })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (message.includes('not found')) {
@@ -146,6 +258,7 @@ export function createRoutingHandlers(services: RoutingServices) {
       const client = getLocalClient(localMidiServerPort)
       const result = await client.deleteRoute(routeId)
       sendJson(res, result)
+      propagateRoute({ id: routeId }, 'delete').catch(() => { /* best effort */ })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (message.includes('not found')) {
@@ -436,8 +549,39 @@ export function createRoutingHandlers(services: RoutingServices) {
         const errorBody = await routeResponse.text()
         throw new Error(errorBody || `HTTP ${routeResponse.status}`)
       }
-      const route = await routeResponse.json()
+      const route = await routeResponse.json() as { route: MidiRoute }
       sendJson(res, route, 201)
+
+      // Propagate to local C++ binary and other peers (fire-and-forget)
+      ;(async () => {
+        const createdRoute = route.route
+        if (!createdRoute?.id) return
+
+        const normalized = resolveLocalUrls(
+          JSON.parse(JSON.stringify(createdRoute)) as MidiRoute,
+          midiServerUrl
+        )
+        const payload = JSON.stringify({
+          id: normalized.id,
+          enabled: normalized.enabled,
+          source: normalized.source,
+          destination: normalized.destination
+        })
+        const headers = { 'Content-Type': 'application/json' }
+
+        fetch(`http://localhost:${localMidiServerPort}/routes`, {
+          method: 'POST', body: payload, headers
+        }).catch(() => { /* best effort */ })
+
+        const otherPeers = discovery.getServers().filter(
+          (s) => !s.isLocal && s.midiServerPort > 0 && getMidiUrlForPeer(s) !== midiServerUrl
+        )
+        for (const peer of otherPeers) {
+          fetch(`${getMidiUrlForPeer(peer)}/routes`, {
+            method: 'POST', body: payload, headers
+          }).catch(() => { /* best effort */ })
+        }
+      })().catch(() => { /* best effort */ })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sendError(res, `Failed to create remote route: ${message}`, 502)
@@ -479,6 +623,25 @@ export function createRoutingHandlers(services: RoutingServices) {
       }
       const result = await routeResponse.json()
       sendJson(res, result)
+
+      // Propagate to local C++ binary and other peers (fire-and-forget)
+      ;(async () => {
+        const headers = { 'Content-Type': 'application/json' }
+        const payload = JSON.stringify({ enabled: body?.enabled })
+
+        fetch(`http://localhost:${localMidiServerPort}/routes/${routeId}`, {
+          method: 'PUT', body: payload, headers
+        }).catch(() => { /* best effort */ })
+
+        const otherPeers = discovery.getServers().filter(
+          (s) => !s.isLocal && s.midiServerPort > 0 && getMidiUrlForPeer(s) !== midiServerUrl
+        )
+        for (const peer of otherPeers) {
+          fetch(`${getMidiUrlForPeer(peer)}/routes/${routeId}`, {
+            method: 'PUT', body: payload, headers
+          }).catch(() => { /* best effort */ })
+        }
+      })().catch(() => { /* best effort */ })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sendError(res, `Failed to update remote route: ${message}`, 502)
@@ -516,6 +679,22 @@ export function createRoutingHandlers(services: RoutingServices) {
       }
       const result = await routeResponse.json()
       sendJson(res, result)
+
+      // Propagate to local C++ binary and other peers (fire-and-forget)
+      ;(async () => {
+        fetch(`http://localhost:${localMidiServerPort}/routes/${routeId}`, {
+          method: 'DELETE'
+        }).catch(() => { /* best effort */ })
+
+        const otherPeers = discovery.getServers().filter(
+          (s) => !s.isLocal && s.midiServerPort > 0 && getMidiUrlForPeer(s) !== midiServerUrl
+        )
+        for (const peer of otherPeers) {
+          fetch(`${getMidiUrlForPeer(peer)}/routes/${routeId}`, {
+            method: 'DELETE'
+          }).catch(() => { /* best effort */ })
+        }
+      })().catch(() => { /* best effort */ })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sendError(res, `Failed to delete remote route: ${message}`, 502)
@@ -538,6 +717,7 @@ export function createRoutingHandlers(services: RoutingServices) {
     handleRemoteServerStart,
     handleRemoteServerStop,
     handleGetVirtualPorts,
+    syncRoutesFromPeers,
     handleCreateVirtualPort,
     handleDeleteVirtualPort,
     handleRemoteServerGetRoutes,

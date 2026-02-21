@@ -613,6 +613,17 @@ public:
                     enabled = (req.body.substr(enabledPos, 4) == "true");
                 }
 
+                // Parse id (optional, allows pre-specified ID for cross-server replication)
+                std::string prespecifiedId;
+                size_t idPos = req.body.find("\"id\":\"");
+                if (idPos != std::string::npos) {
+                    idPos += 6;
+                    size_t idEnd = req.body.find("\"", idPos);
+                    if (idEnd != std::string::npos) {
+                        prespecifiedId = req.body.substr(idPos, idEnd - idPos);
+                    }
+                }
+
                 if (source.portId.empty() || destination.portId.empty()) {
                     JsonBuilder json;
                     json.startObject()
@@ -623,7 +634,7 @@ public:
                     return;
                 }
 
-                std::string routeId = routeManager.addRoute(source, destination, enabled);
+                std::string routeId = routeManager.addRoute(source, destination, enabled, prespecifiedId);
 
                 JsonBuilder json;
                 json.startObject()
