@@ -11,13 +11,20 @@ CREATE_TAG=false
 
 usage() {
     cat <<EOF
-Usage: $0 --version <semver> [options]
+Usage: $0 [options]
+
+Prepares a release by syncing version from VERSION file to package.json.
 
 Options:
-  --version VERSION   Version to set (required)
+  --version VERSION   Override version (defaults to VERSION file)
   --commit            Create a release commit
   --tag               Create annotated tag vVERSION (requires --commit)
   -h, --help          Show this help
+
+Workflow:
+  1. Edit VERSION file with new version
+  2. Run: $0 --commit --tag
+  3. Script syncs package.json, commits, and tags
 EOF
 }
 
@@ -45,8 +52,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[ -n "$VERSION" ] || die "--version is required"
-validate_version "$VERSION"
+# Read version from VERSION file if not specified
+if [ -n "$VERSION" ]; then
+    validate_version "$VERSION"
+else
+    VERSION="$(read_version)"
+fi
 
 if [ "$CREATE_TAG" = true ] && [ "$CREATE_COMMIT" = false ]; then
     die "--tag requires --commit"
@@ -55,11 +66,21 @@ fi
 require_cmd git
 require_cmd npm
 
-ensure_clean_git
+# Check for unexpected changes (allow VERSION and dashboard/package*.json)
+if [ "$CREATE_COMMIT" = true ]; then
+    unexpected_changes=$(git -C "$PROJECT_ROOT" status --porcelain | grep -v "^.. VERSION$" | grep -v "^.. dashboard/package.json$" | grep -v "^.. dashboard/package-lock.json$" || true)
+    if [ -n "$unexpected_changes" ]; then
+        echo "Unexpected uncommitted changes:" >&2
+        echo "$unexpected_changes" >&2
+        die "Commit or stash unrelated changes first"
+    fi
+fi
+
 if [ "$CREATE_TAG" = true ]; then
     ensure_tag_absent "v$VERSION"
 fi
 
+# Sync version to package.json (VERSION file is source of truth)
 set_project_version "$VERSION"
 
 if [ "$CREATE_COMMIT" = true ]; then
