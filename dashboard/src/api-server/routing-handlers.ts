@@ -540,10 +540,28 @@ export function createRoutingHandlers(services: RoutingServices) {
       const url = new URL(serverUrl)
       const midiServerUrl = `http://${url.hostname}:${midiServerPort}`
 
+      // Normalize "local" serverUrls before sending to the remote server:
+      // - "local" source → local to the remote server (midiServerUrl)
+      // - "local" destination → this dashboard's MIDI server (buildLocalMidiUrl)
+      const localMidiUrl = buildLocalMidiUrl()
+      const normalizedBody = {
+        ...body,
+        source: {
+          ...body.source,
+          serverUrl: body.source.serverUrl === 'local' || body.source.serverUrl === ''
+            ? midiServerUrl : body.source.serverUrl
+        },
+        destination: {
+          ...body.destination,
+          serverUrl: body.destination.serverUrl === 'local' || body.destination.serverUrl === ''
+            ? localMidiUrl : body.destination.serverUrl
+        }
+      }
+
       const routeResponse = await fetch(`${midiServerUrl}/routes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(normalizedBody)
       })
       if (!routeResponse.ok) {
         const errorBody = await routeResponse.text()
