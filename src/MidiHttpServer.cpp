@@ -73,6 +73,9 @@ public:
     }
 
     void startServer() {
+        // Auto-open ports referenced by any routes persisted from last run
+        autoOpenPortsForAllRoutes();
+
         server = std::make_unique<httplib::Server>();
 
         // Add CORS headers to all responses
@@ -636,6 +639,9 @@ public:
 
                 std::string routeId = routeManager.addRoute(source, destination, enabled, prespecifiedId);
 
+                // Auto-open any local physical ports the route references
+                autoOpenPortsForRoute(source, destination);
+
                 JsonBuilder json;
                 json.startObject()
                     .key("route").startObject()
@@ -772,6 +778,60 @@ private:
     std::map<std::string, std::unique_ptr<VirtualMidiPort>> virtualPorts;
     std::mutex portsMutex;
     RouteManager routeManager;
+
+    // Returns true if the endpoint is a local physical port (not virtual, not remote)
+    static bool isLocalPhysical(const std::string& serverUrl, const std::string& portId) {
+        return (serverUrl.empty() || serverUrl == "local") &&
+               portId.rfind("virtual:", 0) == std::string::npos;
+    }
+
+    // Ensures a local physical port is open, opening it if needed.
+    // isInput is inferred from portId prefix ("input-" = true, "output-" = false).
+    void ensureLocalPortOpen(const std::string& portId, const std::string& portName) {
+        {
+            std::lock_guard<std::mutex> lock(portsMutex);
+            if (ports.find(portId) != ports.end()) return;
+        }
+
+        bool isInput = (portId.rfind("input-", 0) == 0);
+        auto port = std::make_unique<MidiPort>(portId, portName, isInput);
+
+        if (isInput) {
+            port->setMessageCallback([this](const std::string& srcPortId,
+                                            const std::vector<uint8_t>& data) {
+                routeManager.forwardMessage(srcPortId, data);
+            });
+        }
+
+        bool success = port->open();
+        if (success) {
+            std::lock_guard<std::mutex> lock(portsMutex);
+            ports[portId] = std::move(port);
+            std::cout << "[MidiHttpServer] Auto-opened " << (isInput ? "input" : "output")
+                      << " port: " << portName << std::endl;
+        } else {
+            std::cerr << "[MidiHttpServer] Failed to auto-open port: "
+                      << portName << std::endl;
+        }
+    }
+
+    // Auto-opens any local physical ports referenced by a route's endpoints.
+    void autoOpenPortsForRoute(const RouteEndpoint& source, const RouteEndpoint& destination) {
+        if (isLocalPhysical(source.serverUrl, source.portId) && !source.portName.empty()) {
+            ensureLocalPortOpen(source.portId, source.portName);
+        }
+        if (isLocalPhysical(destination.serverUrl, destination.portId) && !destination.portName.empty()) {
+            ensureLocalPortOpen(destination.portId, destination.portName);
+        }
+    }
+
+    // Auto-opens ports for all persisted routes (called at startup).
+    void autoOpenPortsForAllRoutes() {
+        auto routes = routeManager.getAllRoutes();
+        for (const auto& route : routes) {
+            autoOpenPortsForRoute(route.source, route.destination);
+        }
+    }
 
     // Helper to extract a string value from a nested JSON object
     static std::string extractNestedJsonString(const std::string& json,
