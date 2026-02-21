@@ -441,6 +441,9 @@ private:
         }
         body << "]}";
 
+        std::cout << "[RouteManager] Forwarding " << data.size() << " bytes to "
+                  << host << ":" << port << path << std::endl;
+
         // Enqueue on the persistent per-destination forwarder (non-blocking)
         getForwarder(host, port).send(path, body.str());
     }

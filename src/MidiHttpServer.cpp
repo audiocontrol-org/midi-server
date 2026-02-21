@@ -551,7 +551,10 @@ public:
                     return;
                 }
 
+                std::cout << "[VirtualSend] Sending " << message.size()
+                          << " bytes to virtual port: " << portId << std::endl;
                 it->second->sendMessage(message);
+                std::cout << "[VirtualSend] sendMessage() returned for: " << portId << std::endl;
 
                 JsonBuilder json;
                 json.startObject().key("success").value(true).endObject();
