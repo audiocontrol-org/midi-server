@@ -16,7 +16,12 @@ usage() {
     cat <<EOF
 Usage: $0 [options]
 
-Publishes GitHub release vVERSION with updater artifacts and signed installer.
+Publishes GitHub release vVERSION with all platform artifacts.
+
+Collects artifacts from:
+  - macOS: dashboard/dist/ (updater files) + build/pkg/ (.pkg installer)
+  - Linux: build/dist-linux/ (.deb packages)
+  - Source: build/release/ (source tarball)
 
 Options:
   --version VERSION      Override version (defaults to VERSION file)
@@ -81,31 +86,125 @@ fi
 require_cmd gh
 require_cmd find
 
-DIST_DIR="$DASHBOARD_DIR/dist"
-PKG_FILE="$PROJECT_ROOT/build/pkg/MidiServer-$VERSION.pkg"
+# Artifact locations
+MACOS_DIST_DIR="$DASHBOARD_DIR/dist"
+MACOS_PKG_FILE="$PROJECT_ROOT/build/pkg/MidiServer-$VERSION.pkg"
+LINUX_DIST_DIR="$PROJECT_ROOT/build/dist-linux"
+RELEASE_DIR="$PROJECT_ROOT/build/release"
+SOURCE_TARBALL="$RELEASE_DIR/midihttpserver-$VERSION-source.tar.gz"
 
-[ -d "$DIST_DIR" ] || die "Dist directory not found: $DIST_DIR"
-[ -f "$PKG_FILE" ] || die "Installer package not found: $PKG_FILE"
+# Validate macOS artifacts exist
+[ -d "$MACOS_DIST_DIR" ] || die "macOS dist directory not found: $MACOS_DIST_DIR"
+[ -f "$MACOS_PKG_FILE" ] || die "macOS installer package not found: $MACOS_PKG_FILE"
 
-manifest_count=$(find "$DIST_DIR" -maxdepth 1 -type f -name "latest-mac*.yml" | wc -l | tr -d ' ')
-zip_count=$(find "$DIST_DIR" -maxdepth 1 -type f -name "*-$VERSION*-mac.zip" | wc -l | tr -d ' ')
+manifest_count=$(find "$MACOS_DIST_DIR" -maxdepth 1 -type f -name "latest-mac*.yml" | wc -l | tr -d ' ')
+zip_count=$(find "$MACOS_DIST_DIR" -maxdepth 1 -type f -name "*-$VERSION*-mac.zip" | wc -l | tr -d ' ')
 
-[ "$manifest_count" -gt 0 ] || die "No latest-mac*.yml found in $DIST_DIR"
-[ "$zip_count" -gt 0 ] || die "No version-matched zip artifacts found in $DIST_DIR"
+[ "$manifest_count" -gt 0 ] || die "No latest-mac*.yml found in $MACOS_DIST_DIR"
+[ "$zip_count" -gt 0 ] || die "No version-matched zip artifacts found in $MACOS_DIST_DIR"
 
+# Collect all assets
 ASSETS=()
-while IFS= read -r file; do
-    ASSETS+=("$file")
-done < <(find "$DIST_DIR" -maxdepth 1 -type f -name "latest-mac*.yml" | sort)
-while IFS= read -r file; do
-    ASSETS+=("$file")
-done < <(find "$DIST_DIR" -maxdepth 1 -type f \( -name "*-$VERSION*-mac.zip" -o -name "*-$VERSION*-mac.zip.blockmap" \) | sort)
-while IFS= read -r file; do
-    ASSETS+=("$file")
-done < <(find "$DIST_DIR" -maxdepth 1 -type f \( -name "*-$VERSION*.dmg" -o -name "*-$VERSION*.dmg.blockmap" \) | sort)
-ASSETS+=("$PKG_FILE")
 
+# macOS updater manifests
+info "Collecting macOS updater manifests..."
+while IFS= read -r file; do
+    ASSETS+=("$file")
+done < <(find "$MACOS_DIST_DIR" -maxdepth 1 -type f -name "latest-mac*.yml" | sort)
+
+# macOS updater zips and blockmaps
+info "Collecting macOS updater archives..."
+while IFS= read -r file; do
+    ASSETS+=("$file")
+done < <(find "$MACOS_DIST_DIR" -maxdepth 1 -type f \( -name "*-$VERSION*-mac.zip" -o -name "*-$VERSION*-mac.zip.blockmap" \) | sort)
+
+# macOS DMG files
+while IFS= read -r file; do
+    ASSETS+=("$file")
+done < <(find "$MACOS_DIST_DIR" -maxdepth 1 -type f \( -name "*-$VERSION*.dmg" -o -name "*-$VERSION*.dmg.blockmap" \) | sort)
+
+# macOS PKG installer
+info "Adding macOS installer: $MACOS_PKG_FILE"
+ASSETS+=("$MACOS_PKG_FILE")
+
+# Linux DEB packages
+if [ -d "$LINUX_DIST_DIR" ]; then
+    info "Collecting Linux packages..."
+    while IFS= read -r file; do
+        ASSETS+=("$file")
+    done < <(find "$LINUX_DIST_DIR" -maxdepth 1 -type f -name "*.deb" | sort)
+
+    # Linux AppImage (if present)
+    while IFS= read -r file; do
+        ASSETS+=("$file")
+    done < <(find "$LINUX_DIST_DIR" -maxdepth 1 -type f -name "*.AppImage" | sort)
+else
+    info "No Linux artifacts found (skipping)"
+fi
+
+# Source tarball
+if [ -f "$SOURCE_TARBALL" ]; then
+    info "Adding source tarball: $SOURCE_TARBALL"
+    ASSETS+=("$SOURCE_TARBALL")
+else
+    info "No source tarball found (skipping)"
+fi
+
+# Generate combined SHA256SUMS
+info "Generating combined checksums..."
+CHECKSUMS_FILE="$RELEASE_DIR/SHA256SUMS"
+mkdir -p "$RELEASE_DIR"
+rm -f "$CHECKSUMS_FILE"
+
+for asset in "${ASSETS[@]}"; do
+    filename=$(basename "$asset")
+    checksum=$(shasum -a 256 "$asset" | cut -d' ' -f1)
+    echo "$checksum  $filename" >> "$CHECKSUMS_FILE"
+done
+
+ASSETS+=("$CHECKSUMS_FILE")
+
+# Build gh release command
 TAG="v$VERSION"
+
+# Get repo info for download URLs
+if [ -n "${RELEASE_GH_REPO:-}" ]; then
+    GH_REPO="$RELEASE_GH_REPO"
+else
+    GH_REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null || echo "")
+fi
+
+# Generate release notes with download links if no custom notes provided
+if [ -z "$NOTES" ] && [ -z "$NOTES_FILE" ]; then
+    MACOS_PKG_NAME=$(basename "$MACOS_PKG_FILE")
+    LINUX_DEB_NAME=$(find "$LINUX_DIST_DIR" -maxdepth 1 -name "*.deb" -type f -printf '%f\n' 2>/dev/null | head -1 || basename "$(find "$LINUX_DIST_DIR" -maxdepth 1 -name "*.deb" -type f 2>/dev/null | head -1)" 2>/dev/null || echo "")
+    SOURCE_NAME=$(basename "$SOURCE_TARBALL")
+
+    DOWNLOAD_BASE="https://github.com/$GH_REPO/releases/download/$TAG"
+
+    GENERATED_NOTES="## Downloads
+
+| Platform | Package |
+|----------|---------|
+| **macOS** | [$MACOS_PKG_NAME]($DOWNLOAD_BASE/$MACOS_PKG_NAME) |"
+
+    if [ -n "$LINUX_DEB_NAME" ]; then
+        GENERATED_NOTES="$GENERATED_NOTES
+| **Linux (Debian/Ubuntu)** | [$LINUX_DEB_NAME]($DOWNLOAD_BASE/$LINUX_DEB_NAME) |"
+    fi
+
+    if [ -f "$SOURCE_TARBALL" ]; then
+        GENERATED_NOTES="$GENERATED_NOTES
+| **Source** | [$SOURCE_NAME]($DOWNLOAD_BASE/$SOURCE_NAME) |"
+    fi
+
+    GENERATED_NOTES="$GENERATED_NOTES
+
+## Checksums
+See [SHA256SUMS]($DOWNLOAD_BASE/SHA256SUMS) for verification.
+"
+fi
+
 CMD=(gh release create "$TAG")
 if [ -n "${RELEASE_GH_REPO:-}" ]; then
     CMD+=(-R "$RELEASE_GH_REPO")
@@ -126,10 +225,19 @@ if [ -n "$NOTES_FILE" ]; then
     CMD+=(--notes-file "$NOTES_FILE")
 elif [ -n "$NOTES" ]; then
     CMD+=(--notes "$NOTES")
+elif [ -n "$GENERATED_NOTES" ]; then
+    CMD+=(--generate-notes --notes "$GENERATED_NOTES")
 else
     CMD+=(--generate-notes)
 fi
 
 info "Publishing $TAG with ${#ASSETS[@]} assets"
+echo ""
+echo "Assets to upload:"
+for asset in "${ASSETS[@]}"; do
+    echo "  - $(basename "$asset")"
+done
+echo ""
+
 "${CMD[@]}"
 info "Release published: $TAG"
