@@ -779,10 +779,24 @@ private:
     std::mutex portsMutex;
     RouteManager routeManager;
 
+    // Returns true if serverUrl refers to this server instance:
+    // either the "local" sentinel or an absolute URL pointing to our own port.
+    bool isSelf(const std::string& serverUrl) const {
+        if (serverUrl.empty() || serverUrl == "local") return true;
+        // Check if the URL's port component matches ours
+        size_t colonPos = serverUrl.rfind(':');
+        if (colonPos != std::string::npos) {
+            try {
+                int urlPort = std::stoi(serverUrl.substr(colonPos + 1));
+                if (urlPort == serverPort) return true;
+            } catch (...) {}
+        }
+        return false;
+    }
+
     // Returns true if the endpoint is a local physical port (not virtual, not remote)
-    static bool isLocalPhysical(const std::string& serverUrl, const std::string& portId) {
-        return (serverUrl.empty() || serverUrl == "local") &&
-               portId.rfind("virtual:", 0) == std::string::npos;
+    bool isLocalPhysical(const std::string& serverUrl, const std::string& portId) const {
+        return isSelf(serverUrl) && portId.rfind("virtual:", 0) == std::string::npos;
     }
 
     // Ensures a local physical port is open, opening it if needed.
@@ -833,7 +847,7 @@ private:
         }
     }
 
-    // Helper to extract a string value from a nested JSON object
+    // Helper to extract a string value from a nested JSON object (static — no server state needed)
     static std::string extractNestedJsonString(const std::string& json,
                                                 size_t objectStart,
                                                 const std::string& key) {
