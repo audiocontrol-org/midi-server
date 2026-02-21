@@ -113,15 +113,29 @@ public:
         }
     }
 
-    // Inject a message into the virtual input's queue
-    // This simulates receiving a message from another app
+    // Inject a message into the virtual input port.
+    // Queues for HTTP polling AND fires the routing callback, exactly as if
+    // the message arrived from CoreMIDI. Used for automated testing.
     void injectMessage(const std::vector<uint8_t>& data) {
         if (!isInputPort) {
             std::cerr << "Cannot inject: not an input port\n";
             return;
         }
-        std::lock_guard<std::mutex> lock(queueMutex);
-        messageQueue.push(data);
+
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            messageQueue.push(data);
+        }
+
+        // Fire routing callback so routes actually forward the message
+        VirtualMidiMessageCallback callback;
+        {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            callback = messageCallback;
+        }
+        if (callback) {
+            callback(portId, data);
+        }
     }
 
     // Get messages received by this virtual input port

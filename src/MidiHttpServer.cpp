@@ -17,7 +17,9 @@
 #include "VirtualMidiPort.h"
 #include "RouteManager.h"
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -76,12 +78,22 @@ public:
         // Auto-open ports referenced by any routes persisted from last run.
         // Retry after delays: CoreMIDI sometimes doesn't enumerate all devices immediately.
         autoOpenPortsForAllRoutes();
-        std::thread([this]() {
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+        retryThreadRunning = true;
+        retryThread = std::thread([this]() {
+            // Wait 2s, retry if not cancelled
+            std::unique_lock<std::mutex> lock(retryMutex);
+            retryCV.wait_for(lock, std::chrono::seconds(2), [this] { return !retryThreadRunning.load(); });
+            if (!retryThreadRunning) return;
+            lock.unlock();
             autoOpenPortsForAllRoutes();
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            // Wait 5s more, retry if not cancelled
+            lock.lock();
+            retryCV.wait_for(lock, std::chrono::seconds(5), [this] { return !retryThreadRunning.load(); });
+            if (!retryThreadRunning) return;
+            lock.unlock();
             autoOpenPortsForAllRoutes();
-        }).detach();
+        });
 
         server = std::make_unique<httplib::Server>();
 
@@ -765,6 +777,16 @@ public:
     }
 
     void stopServer() {
+        // Signal and join retry thread before destroying anything it touches
+        {
+            std::lock_guard<std::mutex> lock(retryMutex);
+            retryThreadRunning = false;
+        }
+        retryCV.notify_all();
+        if (retryThread.joinable()) {
+            retryThread.join();
+        }
+
         if (server) {
             server->stop();
         }
@@ -781,6 +803,10 @@ private:
     int serverPort;
     std::unique_ptr<httplib::Server> server;
     std::thread serverThread;
+    std::thread retryThread;
+    std::atomic<bool> retryThreadRunning{false};
+    std::mutex retryMutex;
+    std::condition_variable retryCV;
     std::map<std::string, std::unique_ptr<MidiPort>> ports;
     std::map<std::string, std::unique_ptr<VirtualMidiPort>> virtualPorts;
     std::mutex portsMutex;
