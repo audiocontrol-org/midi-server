@@ -1,56 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { OpenPort, MidiMessage } from '@/types/api'
 import { createClient } from '@/api/client'
+import { useMidiStream } from '@/hooks/useMidiStream'
+import { usePortMidiMessages } from '@/stores/midi-message-store'
+import { formatMidiMessage, NOTE_NAMES } from '@/utils/midi-format'
 
 interface PortDetailProps {
   port: OpenPort
   onClose: () => void
   onMessagesReceived: (messages: MidiMessage[]) => void
-}
-
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-
-function formatMidiMessage(data: number[]): string {
-  if (data.length === 0) return '(empty)'
-
-  const status = data[0]
-  const channel = (status & 0x0f) + 1
-  const type = status & 0xf0
-
-  if (status === 0xf0) {
-    return `SysEx [${data.length} bytes]`
-  }
-
-  switch (type) {
-    case 0x80: {
-      const note = data[1]
-      const velocity = data[2]
-      const noteName = NOTE_NAMES[note % 12] + Math.floor(note / 12 - 1)
-      return `Note Off ch${channel} ${noteName} vel=${velocity}`
-    }
-    case 0x90: {
-      const note = data[1]
-      const velocity = data[2]
-      const noteName = NOTE_NAMES[note % 12] + Math.floor(note / 12 - 1)
-      return velocity > 0
-        ? `Note On ch${channel} ${noteName} vel=${velocity}`
-        : `Note Off ch${channel} ${noteName}`
-    }
-    case 0xa0:
-      return `Aftertouch ch${channel} note=${data[1]} pressure=${data[2]}`
-    case 0xb0:
-      return `CC ch${channel} cc${data[1]}=${data[2]}`
-    case 0xc0:
-      return `Program ch${channel} prog=${data[1]}`
-    case 0xd0:
-      return `Ch Pressure ch${channel} pressure=${data[1]}`
-    case 0xe0: {
-      const bend = data[1] | (data[2] << 7)
-      return `Pitch Bend ch${channel} value=${bend - 8192}`
-    }
-    default:
-      return `[${data.map((b) => b.toString(16).padStart(2, '0')).join(' ')}]`
-  }
 }
 
 export function PortDetail({
@@ -67,15 +25,24 @@ export function PortDetail({
   const isVirtual = port.portId.startsWith('virtual:')
   const virtualPortId = isVirtual ? port.portId.replace('virtual:', '') : null
 
-  // Poll for messages on input ports
+  // For real input ports: subscribe to SSE stream
+  const isRealInput = port.type === 'input' && !isVirtual
+  const sseSubscriptions = isRealInput
+    ? [{ portId: port.portId, portName: port.name }]
+    : []
+  const { getPortStatus } = useMidiStream(sseSubscriptions)
+  const sseStatus = isRealInput ? getPortStatus(port.portId) : undefined
+
+  // Read messages from the centralized store for real input ports
+  const storeMessages = usePortMidiMessages(port.portId)
+
+  // For virtual input ports: keep polling
   useEffect(() => {
-    if (port.type !== 'input') return
+    if (port.type !== 'input' || !isVirtual || !virtualPortId) return
 
     const pollMessages = async (): Promise<void> => {
       try {
-        const response = isVirtual && virtualPortId
-          ? await clientRef.current.getVirtualMessages(virtualPortId)
-          : await clientRef.current.getMessages(port.portId)
+        const response = await clientRef.current.getVirtualMessages(virtualPortId)
         if (response.messages.length > 0) {
           onMessagesReceived(response.messages)
         }
@@ -84,14 +51,19 @@ export function PortDetail({
       }
     }
 
-    const interval = setInterval(pollMessages, 100) // Poll every 100ms
+    const interval = setInterval(pollMessages, 100)
     return () => clearInterval(interval)
   }, [port.portId, port.type, onMessagesReceived, isVirtual, virtualPortId])
+
+  // Determine which messages to display
+  const displayMessages: ReadonlyArray<{ data: number[]; timestamp: number }> = isRealInput
+    ? storeMessages
+    : port.messages
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [port.messages])
+  }, [displayMessages])
 
   const sendMessage = useCallback(
     async (message: number[]) => {
@@ -221,13 +193,24 @@ export function PortDetail({
       {port.type === 'input' && (
         <div>
           <h4 className="text-sm font-medium mb-2 text-gray-300">
-            Incoming Messages ({port.messages.length})
+            Incoming Messages ({displayMessages.length})
+            {isRealInput && sseStatus && (
+              <span className={`ml-2 text-xs ${
+                sseStatus === 'connected' ? 'text-green-400' :
+                sseStatus === 'connecting' ? 'text-yellow-400' :
+                'text-red-400'
+              }`}>
+                {sseStatus === 'connected' ? '(streaming)' :
+                 sseStatus === 'connecting' ? '(connecting...)' :
+                 '(connection error)'}
+              </span>
+            )}
           </h4>
           <div className="bg-gray-900 rounded p-2 h-48 overflow-y-auto font-mono text-xs">
-            {port.messages.length === 0 ? (
+            {displayMessages.length === 0 ? (
               <p className="text-gray-500">Waiting for MIDI messages...</p>
             ) : (
-              port.messages.map((msg, i) => (
+              displayMessages.map((msg, i) => (
                 <div key={i} className="py-0.5 text-gray-300">
                   <span className="text-gray-500">
                     {new Date(msg.timestamp).toLocaleTimeString()}
