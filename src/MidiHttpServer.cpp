@@ -16,6 +16,7 @@
 #include "MidiPort.h"
 #include "VirtualMidiPort.h"
 #include "RouteManager.h"
+#include "SseClientManager.h"
 
 #include <atomic>
 #include <chrono>
@@ -169,6 +170,8 @@ public:
                     port->setMessageCallback([this](const std::string& srcPortId,
                                                     const std::vector<uint8_t>& data) {
                         routeManager.forwardMessage(srcPortId, data);
+                        // Broadcast to SSE clients
+                        sseClientManager.broadcast(srcPortId, data);
                     });
                 }
 
@@ -305,6 +308,74 @@ public:
         });
 
         //==============================================================================
+        // Server-Sent Events (SSE) endpoint for real-time MIDI message streaming
+        //==============================================================================
+
+        // SSE endpoint for real-time MIDI messages from an input port
+        server->Get("/port/:portId/events", [this](const httplib::Request& req, httplib::Response& res) {
+            std::string portId = req.path_params.at("portId");
+
+            // Verify port exists
+            {
+                std::lock_guard<std::mutex> lock(portsMutex);
+                auto it = ports.find(portId);
+                if (it == ports.end()) {
+                    JsonBuilder json;
+                    json.startObject().key("error").value(std::string("Port not found")).endObject();
+                    res.status = 404;
+                    res.set_content(json.toString(), "application/json");
+                    return;
+                }
+            }
+
+            // Register SSE client
+            auto [clientId, client] = sseClientManager.registerClient(portId);
+
+            // Set SSE headers and chunked content provider
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");  // Disable nginx buffering
+
+            res.set_chunked_content_provider(
+                "text/event-stream",
+                [this, client, portId](size_t /*offset*/, httplib::DataSink& sink) -> bool {
+                    // Check if client is still active
+                    if (!client->isActive()) {
+                        return false;  // End stream
+                    }
+
+                    std::vector<uint8_t> message;
+                    if (client->waitForMessage(message, 1000)) {
+                        // Format SSE event
+                        std::ostringstream oss;
+                        oss << "event: midi\ndata: {\"bytes\":[";
+                        for (size_t i = 0; i < message.size(); i++) {
+                            if (i > 0) oss << ",";
+                            oss << (int)message[i];
+                        }
+                        auto now = std::chrono::system_clock::now();
+                        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now.time_since_epoch()).count();
+                        oss << "],\"timestamp\":" << timestamp << "}\n\n";
+
+                        std::string event = oss.str();
+                        sink.write(event.c_str(), event.size());
+                    } else {
+                        // Send keepalive comment to detect disconnects
+                        std::string keepalive = ": keepalive\n\n";
+                        sink.write(keepalive.c_str(), keepalive.size());
+                    }
+
+                    return client->isActive();  // Continue if client still active
+                },
+                [this, clientId](bool /*success*/) {
+                    // Cleanup: unregister client when stream ends
+                    sseClientManager.unregisterClient(clientId);
+                }
+            );
+        });
+
+        //==============================================================================
         // Virtual MIDI port endpoints (for testing)
         //==============================================================================
 
@@ -368,6 +439,8 @@ public:
                     port->setMessageCallback([this](const std::string& srcPortId,
                                                     const std::vector<uint8_t>& data) {
                         routeManager.forwardMessage(srcPortId, data);
+                        // Broadcast to SSE clients
+                        sseClientManager.broadcast(srcPortId, data);
                     });
                 }
 
@@ -764,12 +837,14 @@ public:
                 // Let OS assign an available port
                 int actualPort = server->bind_to_any_port("0.0.0.0");
                 serverPort = actualPort;
-                // Print in parseable format for ProcessManager
+                // Print in parseable formats for different consumers
                 std::cout << "MIDI_SERVER_PORT=" << actualPort << std::endl;
+                std::cout << "{\"port\":" << actualPort << ",\"status\":\"ready\"}" << std::endl;
                 std::cout << "HTTP Server listening on port " << actualPort << std::endl;
                 server->listen_after_bind();
             } else {
                 std::cout << "MIDI_SERVER_PORT=" << serverPort << std::endl;
+                std::cout << "{\"port\":" << serverPort << ",\"status\":\"ready\"}" << std::endl;
                 std::cout << "HTTP Server listening on port " << serverPort << std::endl;
                 server->listen("0.0.0.0", serverPort);
             }
@@ -811,6 +886,7 @@ private:
     std::map<std::string, std::unique_ptr<VirtualMidiPort>> virtualPorts;
     std::mutex portsMutex;
     RouteManager routeManager;
+    SseClientManager sseClientManager;
 
     // Returns true if serverUrl refers to this server instance:
     // either the "local" sentinel or an absolute URL pointing to our own port.
@@ -923,9 +999,18 @@ private:
 int main(int argc, char* argv[])
 {
     // Parse port from command line
+    // Supports: midi-server 7777, midi-server --port 7777, midi-server --port=7777
     int port = 7777;
-    if (argc > 1) {
-        port = std::atoi(argv[1]);
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--port" && i + 1 < argc) {
+            port = std::atoi(argv[++i]);
+        } else if (arg.rfind("--port=", 0) == 0) {
+            port = std::atoi(arg.substr(7).c_str());
+        } else if (arg[0] != '-') {
+            // Positional argument (legacy support)
+            port = std::atoi(argv[i]);
+        }
     }
 
     // Initialize JUCE
