@@ -14,6 +14,7 @@ import { AddRouteModal } from '@/components/AddRouteModal'
 import { AddVirtualPortModal } from '@/components/AddVirtualPortModal'
 import { ServerTabs } from '@/components/ServerTabs'
 import { RemoteServerControl } from '@/components/RemoteServerControl'
+import { MidiMonitor } from '@/components/MidiMonitor'
 import { AppShell, PageHeader, ServerStatus, ServerActions, type TabId } from '@/components/layout'
 import '@/styles/layout.css'
 import {
@@ -723,6 +724,19 @@ export function Dashboard(): React.JSX.Element {
                 onDeleteRoute={handleDeleteRoute}
                 onToggleRoute={handleToggleRoute}
               />
+            </div>
+          </>
+        )
+
+      case 'monitor':
+        return (
+          <>
+            <PageHeader
+              title="MIDI Monitor"
+              subtitle="Real-time multi-port message stream"
+            />
+            <div className="page-content-fill">
+              <MidiMonitor inputPorts={localPorts.inputs} />
             </div>
           </>
         )

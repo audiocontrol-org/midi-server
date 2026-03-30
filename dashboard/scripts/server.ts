@@ -92,7 +92,8 @@ async function startServer(
     server: {
       port: forcedApiPort ?? 0, // Let OS assign an available port or use forced port
       strictPort: !!forcedApiPort,
-      host: '0.0.0.0' // Listen on all interfaces for cross-machine discovery
+      host: '0.0.0.0', // Listen on all interfaces for cross-machine discovery
+      allowedHosts: ['orion-m4', 'orion-m4.local']
     }
   })
 

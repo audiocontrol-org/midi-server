@@ -5,6 +5,7 @@ import type { ApiServerConfig, BuildInfo, LogEntry, LogSeverity } from './types'
 import { ProcessManager } from './process-manager'
 import { LogBuffer } from './log-buffer'
 import { proxyToMidiServer } from './midi-proxy'
+import { proxySseStream } from './sse-proxy'
 import { DiscoveryService } from './discovery'
 import { VirtualPortsStorage } from './virtual-ports-storage'
 import { createRoutingHandlers, type RoutingHandlers } from './routing-handlers'
@@ -370,6 +371,25 @@ export class ApiServer {
             )
           }
         }
+      }
+
+      // SSE proxy for real-time MIDI event streams
+      const portEventsMatch = path.match(/^\/api\/port\/([^/]+)\/events$/)
+      if (portEventsMatch && req.method === 'GET') {
+        const portId = portEventsMatch[1]
+        const status = this.processManager.getStatus()
+        if (!status.running || !status.port) {
+          res.statusCode = 503
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'MIDI server not running' }))
+          return
+        }
+
+        return proxySseStream(
+          res,
+          { targetHost: 'localhost', targetPort: status.port },
+          `/port/${portId}/events`
+        )
       }
 
       // Proxy to MIDI server (strip /midi prefix)

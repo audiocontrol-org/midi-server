@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react'
 import { AudioControlLogo } from './AudioControlLogo'
 
-type TabId = 'ports' | 'routes' | 'graph'
+type TabId = 'ports' | 'routes' | 'graph' | 'monitor'
 
 interface Tab {
   id: TabId
@@ -18,7 +18,8 @@ interface Tab {
 const tabs: Tab[] = [
   { id: 'ports', label: 'Global' },
   { id: 'routes', label: 'Routes' },
-  { id: 'graph', label: 'Graph' }
+  { id: 'graph', label: 'Graph' },
+  { id: 'monitor', label: 'Monitor' }
 ]
 
 interface SiteHeaderProps {
